@@ -1,0 +1,7 @@
+PyQt5==5.15.11
+numpy==2.4.4
+opencv-python==4.13.0.92
+pyqtgraph==0.14.0
+scipy==1.17.1
+matplotlib==3.10.8
+Pillow==12.2.0
