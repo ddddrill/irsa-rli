@@ -21,7 +21,8 @@ def range_compress(E, f_r, R0=0.0):
         R0: начальная дальность до ЦМ (м). Если 0 — дешифровка не нужна.
 
     Returns:
-        P: матрица профилей дальности M×N (модуль IFFT, fftshift).
+        P: матрица профилей дальности M×N (комплексная, fftshift).
+        P_abs: модуль |P| (вещественная, для визуализации и корреляции).
         range_axis: ось дальностей в метрах (M,). Нулевая точка = R0.
         dr: разрешение по дальности (м).
     """
@@ -31,8 +32,8 @@ def range_compress(E, f_r, R0=0.0):
         E_ref = np.exp(1j * 4.0 * np.pi * f_r / SPEED_OF_LIGHT * R0)
         E = E * E_ref[:, np.newaxis]
 
-    P_raw = ifft(E, axis=0)
-    P = np.abs(fftshift(P_raw, axes=0))
+    P = fftshift(ifft(E, axis=0), axes=0)
+    P_abs = np.abs(P)
 
     B = f_r[-1] - f_r[0]
     df = B / (M - 1) if M > 1 else B / M
@@ -41,4 +42,4 @@ def range_compress(E, f_r, R0=0.0):
     range_axis = np.arange(M) * dr
     range_axis = range_axis - range_axis[M - 1] / 2.0
 
-    return P, range_axis, dr
+    return P, P_abs, range_axis, dr

@@ -74,12 +74,12 @@ def run_validation():
             R0=R0, V=sc["V"], alpha=sc["alpha"], omega=sc["omega"],
         )
         E, f_r = generate_raw_matrix(radar, target)
-        P, range_axis, dr = range_compress(E, f_r, R0=R0)
-        fig, ax = plot_range_profiles(P, range_axis, title=sc["label"])
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=R0)
+        fig, ax = plot_range_profiles(P_abs, range_axis, title=sc["label"])
         figs.append(fig)
         plt.close(fig)
 
-        peak_idx = np.argmax(P, axis=0)
+        peak_idx = np.argmax(P_abs, axis=0)
         drift = int(peak_idx[-1]) - int(peak_idx[0])
         print(sc["label"])
         print("  dr = %.3f m, range axis: [%.1f, %.1f] m" % (dr, range_axis[0], range_axis[-1]))

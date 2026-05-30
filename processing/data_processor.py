@@ -9,6 +9,7 @@ from models.radar import Radar
 from models.target import Target
 from simulation.raw_generator import generate_raw_matrix
 from processing.range_compress import range_compress
+from processing.mocomp import mocomp
 from processing.isar_processor import StandardISARProcessor, PolarISARProcessor
 
 logger = logging.getLogger(__name__)
@@ -96,15 +97,34 @@ class DataProcessor(QThread):
         """Сгенерировать сырые данные и выполнить сжатие по дальности.
 
         Returns:
-            P: матрица профилей дальности M×N.
+            P: матрица профилей дальности M×N (комплексная).
+            P_abs: модуль |P| (вещественная).
             range_axis: ось дальностей (м) относительно R0.
             dr: разрешение по дальности (м).
             f_r: вектор частот (M,).
             target: объект Target.
         """
         E, f_r, target = self.generate_raw_data()
-        P, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
-        return P, range_axis, dr, f_r, target
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        return P, P_abs, range_axis, dr, f_r, target
+
+    def compute_mocomp(self):
+        """Полный конвейер: Raw Data -> Range Compression -> MOCOMP.
+
+        Returns:
+            P_comp: компенсированная матрица M×N (комплексная).
+            range_axis: ось дальностей (м).
+            dr: разрешение по дальности (м).
+            shifts: массив сдвигов огибающей (N,).
+            ref_bin: индекс опорного бина.
+            phase_errors: фазовые ошибки (N,).
+            f_r: вектор частот (M,).
+            target: объект Target.
+        """
+        E, f_r, target = self.generate_raw_data()
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P_comp, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
+        return P_comp, range_axis, dr, shifts, ref_bin, phase_errors, f_r, target
 
     def compute_single(self):
         """Вычислить РЛИ для первого импульса синхронно (без потока)."""
