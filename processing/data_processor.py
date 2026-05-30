@@ -30,7 +30,7 @@ class DataProcessor(QThread):
 
     def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
                  nifft_size=1024, save_dir=None,
-                 V=0.0, alpha=0.0, omega=None):
+                 V=0.0, alpha=0.0, omega=None, pri=1.0, num_pulses=NUM_IMAGES):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -46,10 +46,12 @@ class DataProcessor(QThread):
 
         self.V = V
         self.alpha = alpha
+        self.pri = pri
+        self.num_pulses = num_pulses
         if omega is not None:
             self.omega = omega
         else:
-            self.omega = math.radians(self.ang) / (NUM_IMAGES * 1.0)
+            self.omega = math.radians(self.ang) / (self.num_pulses * 1.0)
 
         self.radar = Radar(
             c=SPEED_OF_LIGHT,
@@ -74,8 +76,8 @@ class DataProcessor(QThread):
     def _make_target(self):
         return Target(
             self.filename,
-            pri=1.0,
-            num_pulses=NUM_IMAGES,
+            pri=self.pri,
+            num_pulses=self.num_pulses,
             R0=self.range_m,
             V=self.V,
             alpha=self.alpha,
@@ -200,7 +202,7 @@ class DataProcessor(QThread):
             complex_v=self.v_complx, exp_v=self.v_exp,
         )
 
-        for i in range(NUM_IMAGES):
+        for i in range(self.num_pulses):
             if not self._is_running:
                 break
 
@@ -212,7 +214,7 @@ class DataProcessor(QThread):
                 self._save_frame(i + 1, frame_data)
 
             self.frame_progress.emit(i + 1)
-            logger.info("Обработан кадр %d/%d", i + 1, NUM_IMAGES)
+            logger.info("Обработан кадр %d/%d", i + 1, self.num_pulses)
 
     def _save_frame(self, frame_num, mat):
         frame_dir = os.path.join(self.save_dir, f"frame_{frame_num:03d}")

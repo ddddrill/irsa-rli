@@ -53,6 +53,7 @@ radioimage/
 old/
 config.json
 *.log
+examples/*.png
 
 # Testing
 .pytest_cache/
