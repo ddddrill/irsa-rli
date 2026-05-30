@@ -8,6 +8,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from models.radar import Radar
 from models.target import Target
 from simulation.raw_generator import generate_raw_matrix
+from processing.range_compress import range_compress
 from processing.isar_processor import StandardISARProcessor, PolarISARProcessor
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,20 @@ class DataProcessor(QThread):
         target = self._make_target()
         E, f_r = generate_raw_matrix(self.radar, target)
         return E, f_r, target
+
+    def compute_range_profiles(self):
+        """Сгенерировать сырые данные и выполнить сжатие по дальности.
+
+        Returns:
+            P: матрица профилей дальности M×N.
+            range_axis: ось дальностей (м) относительно R0.
+            dr: разрешение по дальности (м).
+            f_r: вектор частот (M,).
+            target: объект Target.
+        """
+        E, f_r, target = self.generate_raw_data()
+        P, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        return P, range_axis, dr, f_r, target
 
     def compute_single(self):
         """Вычислить РЛИ для первого импульса синхронно (без потока)."""

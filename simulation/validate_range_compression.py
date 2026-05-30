@@ -1,10 +1,10 @@
-"""Визуальная валидация Этапов 2 и 3: сжатие по дальности (Range Compression).
+"""Визуальная валидация Этапа 4: сжатие по дальности (Range Compression).
 
-Применяет одномерное ОБПФ (IFFT) по оси частот к матрице сырых данных E
-и строит 2D-график профилей дальности.
+Строит 2D-карту профилей дальности |P(range, slow_time)|.
 
-Ось X — бины дальности (индексы после IFFT).
+Ось X — дальность (метры, относительно R0).
 Ось Y — номер импульса (медленное время).
+Цвет  — амплитуда сигнала.
 
 Ожидаемый результат:
   - Если есть поступательное движение (V != 0): косые линии (Range Walk).
@@ -16,53 +16,28 @@
 """
 import math
 import numpy as np
-from scipy.fft import ifft, fftshift
 import matplotlib.pyplot as plt
 
 from models.radar import Radar
 from models.target import Target
 from simulation.raw_generator import generate_raw_matrix
+from processing.range_compress import range_compress
 
 SPEED_OF_LIGHT = 3e8
 
 
-def range_compression(E, f_r):
-    """Сжатие по дальности: IFFT по оси частот (строкам).
-
-    Args:
-        E: матрица сырых данных M×N (частоты × импульсы).
-        f_r: вектор частот (M,).
-
-    Returns:
-        rc: матрица профилей дальности M×N (модуль после IFFT).
-        range_axis: ось дальностей (метры).
-    """
-    M, N = E.shape
-    rc_raw = ifft(E, axis=0)
-    rc = np.abs(fftshift(rc_raw, axes=0))
-
-    df = f_r[1] - f_r[0]
-    fz = M * df
-    dt = 1.0 / fz
-    t = np.arange(M) * dt
-    range_axis = (t * SPEED_OF_LIGHT) / 2.0
-    range_axis = range_axis - range_axis[M - 1] / 2.0
-
-    return rc, range_axis
-
-
-def plot_range_profiles(rc, range_axis, title="Range Compression"):
+def plot_range_profiles(P, range_axis, title="Range Compression"):
     """Построить 2D-график профилей дальности."""
     fig, ax = plt.subplots(figsize=(10, 6))
-    extent = [range_axis[0], range_axis[-1], rc.shape[1] - 1, 0]
+    extent = [range_axis[0], range_axis[-1], P.shape[1] - 1, 0]
     im = ax.imshow(
-        rc,
+        P,
         aspect="auto",
         extent=extent,
         cmap="plasma",
         interpolation="nearest",
     )
-    ax.set_xlabel("Дальность, м")
+    ax.set_xlabel("Дальность, м (относительно R0)")
     ax.set_ylabel("Номер импульса (медленное время)")
     ax.set_title(title)
     plt.colorbar(im, ax=ax, label="Амплитуда")
@@ -84,11 +59,11 @@ def run_validation():
 
     scenarios = [
         {"V": 0.0, "alpha": 0.0, "omega": omega,
-         "label": "Тест 1: Чистое вращение (V=0, w!=0) → горизонтальные линии"},
+         "label": "Test 1: Pure rotation (V=0, w!=0)"},
         {"V": 100.0, "alpha": 0.0, "omega": 0.0,
-         "label": "Тест 2: Чистое поступательное (V=100, w=0) → косые линии"},
+         "label": "Test 2: Pure translation (V=100, w=0)"},
         {"V": 50.0, "alpha": 0.3, "omega": omega,
-         "label": "Тест 3: Комбинированное (V=50, w!=0) → косые + вращение"},
+         "label": "Test 3: Combined (V=50, w!=0)"},
     ]
 
     figs = []
@@ -99,20 +74,22 @@ def run_validation():
             R0=R0, V=sc["V"], alpha=sc["alpha"], omega=sc["omega"],
         )
         E, f_r = generate_raw_matrix(radar, target)
-        rc, range_axis = range_compression(E, f_r)
-        fig, ax = plot_range_profiles(rc, range_axis, title=sc["label"])
+        P, range_axis, dr = range_compress(E, f_r, R0=R0)
+        fig, ax = plot_range_profiles(P, range_axis, title=sc["label"])
         figs.append(fig)
         plt.close(fig)
 
-        peak_idx = np.argmax(rc, axis=0)
-        print(f'{sc["label"]}')
-        print(f'  Peak indices: {peak_idx.tolist()}')
-        print(f'  Drift: {peak_idx[-1] - peak_idx[0]} bins')
+        peak_idx = np.argmax(P, axis=0)
+        drift = int(peak_idx[-1]) - int(peak_idx[0])
+        print(sc["label"])
+        print("  dr = %.3f m, range axis: [%.1f, %.1f] m" % (dr, range_axis[0], range_axis[-1]))
+        print("  Peak indices: %s" % peak_idx.tolist())
+        print("  Drift: %d bins" % drift)
         print()
 
     for i, fig in enumerate(figs):
-        fig.savefig(f"simulation/test_{i+1}_range_compression.png", dpi=150)
-        print(f"Saved: simulation/test_{i+1}_range_compression.png")
+        fig.savefig("simulation/test_%d_range_compression.png" % (i + 1), dpi=150)
+        print("Saved: simulation/test_%d_range_compression.png" % (i + 1))
 
     plt.show()
 
