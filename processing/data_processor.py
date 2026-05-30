@@ -10,6 +10,7 @@ from models.target import Target
 from simulation.raw_generator import generate_raw_matrix
 from processing.range_compress import range_compress
 from processing.mocomp import mocomp
+from processing.azimuth_compress import azimuth_compress, compute_amplitude
 from processing.isar_processor import StandardISARProcessor, PolarISARProcessor
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,34 @@ class DataProcessor(QThread):
         P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
         P_comp, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
         return P_comp, range_axis, dr, shifts, ref_bin, phase_errors, f_r, target
+
+    def compute_isar(self, use_mocomp=True, window="none"):
+        """Полный конвейер ISAR: Raw -> Range -> MOCOMP -> Azimuth -> Image.
+
+        Args:
+            use_mocomp: True — включить MOCOMP, False — пропустить.
+            window: тип оконной функции ("hamming", "hann", "none").
+
+        Returns:
+            I: комплексная матрица изображения M×N.
+            amplitude: амплитуда |I| (вещественная).
+            range_axis: ось дальностей (м).
+            azimuth_axis: ось азимута (м).
+            target: объект Target.
+        """
+        E, f_r, target = self.generate_raw_data()
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+
+        if use_mocomp:
+            P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
+        else:
+            P_proc = P.astype(np.complex128)
+
+        I, azimuth_axis, _ = azimuth_compress(
+            P_proc, self.omega, self.f_c, pri=1.0, window=window,
+        )
+        amplitude = compute_amplitude(I, mode="linear")
+        return I, amplitude, range_axis, azimuth_axis, target
 
     def compute_single(self):
         """Вычислить РЛИ для первого импульса синхронно (без потока)."""
