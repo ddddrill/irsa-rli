@@ -7,6 +7,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 from models.radar import Radar
 from models.target import Target
+from simulation.raw_generator import generate_raw_matrix
 from processing.isar_processor import StandardISARProcessor, PolarISARProcessor
 
 logger = logging.getLogger(__name__)
@@ -67,19 +68,48 @@ class DataProcessor(QThread):
     def stop(self):
         self._is_running = False
 
-    def compute_single(self):
-        """Вычислить один первый кадр синхронно (без потока)."""
-        target = Target(
+    def _make_target(self):
+        return Target(
             self.filename,
             pri=1.0,
+            num_pulses=NUM_IMAGES,
             R0=self.range_m,
             V=self.V,
             alpha=self.alpha,
             omega=self.omega,
         )
-        intens = target._load_scatterers()["intens"]
-        ranges = target.get_ranges(0)
-        return self._radioimage_from_ranges(intens, ranges)
+
+    def generate_raw_data(self):
+        """Сгенерировать полную матрицу сырых данных SFCW.
+
+        Returns:
+            E: комплексная матрица M×N (частоты × импульсы).
+            f_r: вектор частот (M,).
+            target: объект Target (для доступа к кинематике).
+        """
+        target = self._make_target()
+        E, f_r = generate_raw_matrix(self.radar, target)
+        return E, f_r, target
+
+    def compute_single(self):
+        """Вычислить РЛИ для первого импульса синхронно (без потока)."""
+        E, f_r, target = self.generate_raw_data()
+        Nf, Nph, _, ph_r, k_r, Nifft_fr, Nifft_ph, df, dph, FR, PH = (
+            self.radar.base_img_params()
+        )
+
+        proc = StandardISARProcessor(
+            Nf=Nf, Nph=Nph,
+            f_r=f_r, ph_r=ph_r, k_r=k_r,
+            Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph,
+            df=df, dph=dph, FR=FR, PH=PH,
+            f_c=self.f_c,
+            complex_v=self.v_complx, exp_v=self.v_exp,
+        )
+
+        Es_single = E[:, 0:1]
+        base_img, base_x, base_y = proc.compute_image(Es_single)
+        return E, f_r, ph_r, base_img, base_x, base_y
 
     def _compute_and_save(self):
         if self.save_dir and os.path.exists(self.save_dir):
@@ -91,23 +121,28 @@ class DataProcessor(QThread):
                 elif os.path.isfile(item_path):
                     os.remove(item_path)
 
-        target = Target(
-            self.filename,
-            pri=1.0,
-            R0=self.range_m,
-            V=self.V,
-            alpha=self.alpha,
-            omega=self.omega,
+        E, f_r, target = self.generate_raw_data()
+
+        Nf, Nph, _, ph_r, k_r, Nifft_fr, Nifft_ph, df, dph, FR, PH = (
+            self.radar.base_img_params()
         )
 
-        sc = target._load_scatterers()
-        intens = sc["intens"]
+        proc = StandardISARProcessor(
+            Nf=Nf, Nph=Nph,
+            f_r=f_r, ph_r=ph_r, k_r=k_r,
+            Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph,
+            df=df, dph=dph, FR=FR, PH=PH,
+            f_c=self.f_c,
+            complex_v=self.v_complx, exp_v=self.v_exp,
+        )
 
         for i in range(NUM_IMAGES):
             if not self._is_running:
                 break
-            ranges = target.get_ranges(i)
-            frame_data = self._radioimage_from_ranges(intens, ranges)
+
+            Es_single = E[:, i:i+1]
+            base_img, base_x, base_y = proc.compute_image(Es_single)
+            frame_data = (Es_single, f_r, ph_r, base_img, base_x, base_y)
 
             if self.save_dir:
                 self._save_frame(i + 1, frame_data)
