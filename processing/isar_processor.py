@@ -2,6 +2,8 @@ import numpy as np
 from scipy.fft import ifft2, fftshift
 from scipy.interpolate import griddata
 
+SPEED_OF_LIGHT = 3e8
+
 
 class StandardISARProcessor:
     """Процессор РЛИ стандартным методом (без полярного переформатирования)."""
@@ -24,7 +26,7 @@ class StandardISARProcessor:
         self.exp_v = exp_v
 
     def compute_field(self, intens, x, y):
-        """Вычислить поле обратного рассеяния Es для набора рассеивателей."""
+        """Вычислить поле обратного рассеяния Es (старая формула, для совместимости)."""
         Es = np.zeros(
             (self.Nf, self.Nph), dtype="complex128"
         )
@@ -39,6 +41,33 @@ class StandardISARProcessor:
                 )
             )
             Es += ij
+
+        return Es
+
+    def compute_field_from_ranges(self, intens, ranges_matrix):
+        """Вычислить поле обратного рассеяния Es по матрице дальностей.
+
+        Новая физическая формула (Etap 2.6):
+            phi = -4 * pi * f_m / c * R_i(t_n)
+            Es[m, n] = sum_i intens_i * exp(j * phi)
+
+        Args:
+            intens: массив интенсивностей рассеивателей, shape (num_scatterers,).
+            ranges_matrix: матрица дальностей, shape (num_pulses, num_scatterers).
+                ranges_matrix[n, i] = R_i(t_n) — дальность до i-й точки в момент n-го импульса.
+
+        Returns:
+            Es: поле обратного рассеяния, shape (Nf, num_pulses).
+        """
+        num_pulses = ranges_matrix.shape[0]
+        Es = np.zeros((self.Nf, num_pulses), dtype="complex128")
+
+        k_r = self.k_r[:, np.newaxis]
+
+        for n in range(num_pulses):
+            R = ranges_matrix[n, :]
+            for i in range(len(intens)):
+                Es[:, n] += intens[i] * np.exp(-2j * k_r.ravel() * R[i])
 
         return Es
 

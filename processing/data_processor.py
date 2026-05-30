@@ -25,7 +25,8 @@ class DataProcessor(QThread):
     frame_saved = pyqtSignal(str, int)
 
     def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
-                 nifft_size=1024, save_dir=None):
+                 nifft_size=1024, save_dir=None,
+                 V=0.0, alpha=0.0, omega=None):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -38,6 +39,13 @@ class DataProcessor(QThread):
         self.nifft_size = nifft_size
         self.save_dir = save_dir
         self._is_running = True
+
+        self.V = V
+        self.alpha = alpha
+        if omega is not None:
+            self.omega = omega
+        else:
+            self.omega = math.radians(self.ang) / (NUM_IMAGES * 1.0)
 
         self.radar = Radar(
             c=SPEED_OF_LIGHT,
@@ -61,11 +69,17 @@ class DataProcessor(QThread):
 
     def compute_single(self):
         """Вычислить один первый кадр синхронно (без потока)."""
-        target = Target(self.filename)
-        intens, x, y = target.get_frame(0)
-        x_1 = x - math.floor((max(x) - min(x)) / 2)
-        y_1 = y - math.floor((max(y) - min(y)) / 2)
-        return self.radioimage_single(intens, x_1, y_1)
+        target = Target(
+            self.filename,
+            pri=1.0,
+            R0=self.range_m,
+            V=self.V,
+            alpha=self.alpha,
+            omega=self.omega,
+        )
+        intens = target._load_scatterers()["intens"]
+        ranges = target.get_ranges(0)
+        return self._radioimage_from_ranges(intens, ranges)
 
     def _compute_and_save(self):
         if self.save_dir and os.path.exists(self.save_dir):
@@ -77,16 +91,23 @@ class DataProcessor(QThread):
                 elif os.path.isfile(item_path):
                     os.remove(item_path)
 
-        target = Target(self.filename, pri=1.0, ang_rad=math.radians(self.ang))
+        target = Target(
+            self.filename,
+            pri=1.0,
+            R0=self.range_m,
+            V=self.V,
+            alpha=self.alpha,
+            omega=self.omega,
+        )
+
+        sc = target._load_scatterers()
+        intens = sc["intens"]
 
         for i in range(NUM_IMAGES):
             if not self._is_running:
                 break
-            intens, x, y = target.get_frame(i)
-            x_1 = x - math.floor((max(x) - min(x)) / 2)
-            y_1 = y - math.floor((max(y) - min(y)) / 2)
-
-            frame_data = self.radioimage_single(intens, x_1, y_1)
+            ranges = target.get_ranges(i)
+            frame_data = self._radioimage_from_ranges(intens, ranges)
 
             if self.save_dir:
                 self._save_frame(i + 1, frame_data)
@@ -121,6 +142,29 @@ class DataProcessor(QThread):
             Image.fromarray(img_norm).save(os.path.join(frame_dir, "rli.png"))
 
         self.frame_saved.emit(frame_dir, frame_num)
+
+    def _radioimage_from_ranges(self, intens, ranges):
+        """Сформировать РЛИ из вектора дальностей (один импульс).
+
+        Использует формулу: phi = -4*pi*f/c * R_i
+        """
+        Nf, Nph, f_r, ph_r, k_r, Nifft_fr, Nifft_ph, df, dph, FR, PH = (
+            self.radar.base_img_params()
+        )
+
+        proc = StandardISARProcessor(
+            Nf=Nf, Nph=Nph,
+            f_r=f_r, ph_r=ph_r, k_r=k_r,
+            Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph,
+            df=df, dph=dph, FR=FR, PH=PH,
+            f_c=self.f_c,
+            complex_v=self.v_complx, exp_v=self.v_exp,
+        )
+
+        ranges_matrix = ranges.reshape(1, -1)
+        Es = proc.compute_field_from_ranges(intens, ranges_matrix)
+        base_img, base_x, base_y = proc.compute_image(Es)
+        return Es, f_r, ph_r, base_img, base_x, base_y
 
     def radioimage_single(self, intens, x_coord, y_coord):
         if self.method == "стандартный":
