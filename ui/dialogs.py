@@ -7,7 +7,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
 
-import target
+from models.target import Target
 from config import AppConfig
 from filenames import get_matrix_filename
 from processing import DataProcessor
@@ -46,7 +46,7 @@ class GraphWindow(QDialog):
         )
 
         h = 3e8 / (2 * cfg.center_frequency * 1e9)
-        T = target.Target(filename, True)
+        T = Target(filename)
         raw_tensor = T.targets_matrix()
         intens, x, y = raw_tensor[0]
         x_1 = x - math.floor((max(x) - min(x)) / 2)

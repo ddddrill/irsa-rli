@@ -5,9 +5,9 @@ import os
 import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal
 
-import parametrs
-import target
-import RLI
+from models.radar import Radar
+from models.target import Target
+from processing.isar_processor import StandardISARProcessor, PolarISARProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +16,16 @@ NUM_IMAGES = 16
 
 
 class DataProcessor(QThread):
-    """Вычислительный поток: формирование тензора РЛИ из данных цели."""
+    """Вычислительный поток: формирование тензора РЛИ из данных цели.
+
+    Оркестратор: связывает Радар, Цель и Процессор.
+    """
 
     frame_progress = pyqtSignal(int)
     frame_saved = pyqtSignal(str, int)
 
-    def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m, nifft_size=1024, save_dir=None):
+    def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
+                 nifft_size=1024, save_dir=None):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -35,7 +39,7 @@ class DataProcessor(QThread):
         self.save_dir = save_dir
         self._is_running = True
 
-        self.P = parametrs.Parametrs(
+        self.radar = Radar(
             c=SPEED_OF_LIGHT,
             f_c=self.f_c,
             Xmax=self.Xmax,
@@ -45,7 +49,9 @@ class DataProcessor(QThread):
             ang=self.ang,
             nifft_size=self.nifft_size,
         )
-        self.v_cos, self.v_sin, self.v_exp, self.v_complx, self.v_floor = self.P.vector_func()
+        self.v_cos, self.v_sin, self.v_exp, self.v_complx, self.v_floor = (
+            self.radar.vectorize_functions()
+        )
 
     def run(self):
         self._compute_and_save()
@@ -55,9 +61,8 @@ class DataProcessor(QThread):
 
     def compute_single(self):
         """Вычислить один первый кадр синхронно (без потока)."""
-        T = target.Target(self.filename, True)
-        raw_tensor = T.targets_matrix()
-        intens, x, y = raw_tensor[0]
+        target = Target(self.filename)
+        intens, x, y = target.get_frame(0)
         x_1 = x - math.floor((max(x) - min(x)) / 2)
         y_1 = y - math.floor((max(y) - min(y)) / 2)
         return self.radioimage_single(intens, x_1, y_1)
@@ -72,13 +77,12 @@ class DataProcessor(QThread):
                 elif os.path.isfile(item_path):
                     os.remove(item_path)
 
-        T = target.Target(self.filename, True)
-        raw_tensor = T.targets_matrix()
+        target = Target(self.filename, pri=1.0, ang_rad=math.radians(self.ang))
 
         for i in range(NUM_IMAGES):
             if not self._is_running:
                 break
-            intens, x, y = raw_tensor[i]
+            intens, x, y = target.get_frame(i)
             x_1 = x - math.floor((max(x) - min(x)) / 2)
             y_1 = y - math.floor((max(y) - min(y)) / 2)
 
@@ -95,58 +99,81 @@ class DataProcessor(QThread):
         os.makedirs(frame_dir, exist_ok=True)
 
         from PIL import Image
-        import numpy as np
 
         if self.method == "стандартный":
             field_data = abs(np.rot90(mat[0], 2))
             img_data = abs(np.rot90(mat[3], 2))
-            
+
             field_norm = (field_data / field_data.max() * 255).astype(np.uint8)
             img_norm = (img_data / img_data.max() * 255).astype(np.uint8)
-            
+
             Image.fromarray(field_norm).save(os.path.join(frame_dir, "field.png"))
             Image.fromarray(img_norm).save(os.path.join(frame_dir, "rli.png"))
-            
+
         elif self.method == "с полярным переформатированием":
             field_data = abs(mat[0])
             img_data = abs(mat[3] / (mat[4] * mat[5]))
-            
+
             field_norm = (field_data / field_data.max() * 255).astype(np.uint8)
             img_norm = (img_data / img_data.max() * 255).astype(np.uint8)
-            
+
             Image.fromarray(field_norm).save(os.path.join(frame_dir, "field.png"))
             Image.fromarray(img_norm).save(os.path.join(frame_dir, "rli.png"))
 
         self.frame_saved.emit(frame_dir, frame_num)
 
     def radioimage_single(self, intens, x_coord, y_coord):
-        Nf, Nph, f_r, ph_r, k_r, Nifft_fr, Nifft_ph, df, dph, FR, PH = self.P.base_img_param()
+        if self.method == "стандартный":
+            return self._standard_process(intens, x_coord, y_coord)
+        elif self.method == "с полярным переформатированием":
+            return self._polar_process(intens, x_coord, y_coord)
 
-        bm = RLI.base_method(
+    def _standard_process(self, intens, x_coord, y_coord):
+        Nf, Nph, f_r, ph_r, k_r, Nifft_fr, Nifft_ph, df, dph, FR, PH = (
+            self.radar.base_img_params()
+        )
+
+        proc = StandardISARProcessor(
             Nf=Nf, Nph=Nph,
             f_r=f_r, ph_r=ph_r, k_r=k_r,
             Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph,
             df=df, dph=dph, FR=FR, PH=PH,
             f_c=self.f_c,
-            intens=intens,
             complex_v=self.v_complx, exp_v=self.v_exp,
-            range_val=self.range_m,
         )
-        Es = bm.base_field(x=x_coord, y=y_coord)
 
-        if self.method == "стандартный":
-            base_img, base_x, base_y = bm.radio_image(Es=Es)
-            return Es, f_r, ph_r, base_img, base_x, base_y
+        Es = proc.compute_field(intens=intens, x=x_coord, y=y_coord)
+        base_img, base_x, base_y = proc.compute_image(Es)
+        return Es, f_r, ph_r, base_img, base_x, base_y
 
-        elif self.method == "с полярным переформатированием":
-            Nf, Nph, kx, ky, kxMax, kyMax, kxMin, kyMin, Nifft_fr, Nifft_ph, M = self.P.polar_img_param()
-            pm = RLI.polar_method(
-                Nf=Nf, Nph=Nph, kx=kx, ky=ky,
-                kxMax=kxMax, kyMax=kyMax, kxMin=kxMin, kyMin=kyMin,
-                Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph, M=M,
-            )
-            Es_pol, grid_x, grid_y = pm.polar_field(Es=Es)
-            img_polar, Kx, Ky, len_xp, len_yp = pm.polar_image(
-                Es=Es_pol, grid_x=grid_x, grid_y=grid_y
-            )
-            return Es_pol, grid_x, grid_y, img_polar, Kx, Ky, len_xp, len_yp
+    def _polar_process(self, intens, x_coord, y_coord):
+        Nf, Nph, f_r, ph_r, k_r, Nifft_fr, Nifft_ph, df, dph, FR, PH = (
+            self.radar.base_img_params()
+        )
+
+        base_proc = StandardISARProcessor(
+            Nf=Nf, Nph=Nph,
+            f_r=f_r, ph_r=ph_r, k_r=k_r,
+            Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph,
+            df=df, dph=dph, FR=FR, PH=PH,
+            f_c=self.f_c,
+            complex_v=self.v_complx, exp_v=self.v_exp,
+        )
+        Es = base_proc.compute_field(intens=intens, x=x_coord, y=y_coord)
+
+        Nf, Nph, kx, ky, kxMax, kyMax, kxMin, kyMin, Nifft_fr, Nifft_ph, M = (
+            self.radar.polar_img_params()
+        )
+
+        polar_proc = PolarISARProcessor(
+            Nf=Nf, Nph=Nph,
+            kx=kx, ky=ky,
+            kxMax=kxMax, kyMax=kyMax, kxMin=kxMin, kyMin=kyMin,
+            Nifft_fr=Nifft_fr, Nifft_ph=Nifft_ph, M=M,
+        )
+
+        Es_pol, grid_x, grid_y = polar_proc.polar_reformat(Es)
+        img_polar, Kx, Ky, len_xp, len_yp = polar_proc.compute_image(
+            Es_pol, grid_x, grid_y
+        )
+        return Es_pol, grid_x, grid_y, img_polar, Kx, Ky, len_xp, len_yp
