@@ -1,16 +1,31 @@
+import os
 import sys
 import logging
+import logging.handlers
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 
 from ui.main_window import MainWindow
 
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_file_handler = logging.handlers.RotatingFileHandler(
+    os.path.join(LOG_DIR, "isar.log"),
+    maxBytes=2 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
+)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.getLogger().addHandler(_file_handler)
 
 
 def main():

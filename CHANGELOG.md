@@ -1,34 +1,95 @@
-# Changelog
+# Журнал изменений
 
-All notable changes to this project will be documented in this file.
+Все значимые изменения проекта документируются в этом файле.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
+проект придерживается [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-04-20
+## [2.1.0] — 2026-06-05
 
-### Added
-- Main application interface with PyQt5
-- Radar parameters configuration (frequency, spectrum, FFT size, beam width, survey area, range)
-- Support for 5 satellites: cloudSAT, calipso, ICESat2, LRO, solarB
-- Two processing methods: standard and polar reformatting
-- Real-time visualization of scattering field and RLI
-- Batch processing of 16 frames
-- Export results to PNG images
-- Configuration saving to JSON
-- Window icon application
+### Добавлено
+- **Полярное переформатирование** для широкоугольной съёмки ISAR: новый модуль `processing/polar_reformat.py`
+  - Формирование полярной сетки в k-пространстве: `build_kspace_grid`, `compute_wavenumber_axis`, `compute_angle_axis`, `polar_to_cartesian`
+  - Проектирование декартовой сетки по теореме Котельникова: `design_cartesian_grid`
+  - Билинейная интерполяция полярная → декартова: `interpolate_polar_to_cartesian` (scipy RegularGridInterpolator)
+  - Обработка слепых зон + окно Тейлора + zero-padding: `process_blind_zones`, `taylor_window_1d`, `apply_window_2d`
+  - 2D IFFT + физическое масштабирование осей: `form_image_2d`, `compute_amplitude_db`
+- Умная маршрутизация конвейера в `DataProcessor`: автоматическое переключение стандартного и полярного методов по порогу Δθ (`should_use_polar_reformat`, порог 3°)
+- Метрики качества фокусировки: `compute_image_entropy`, `compute_isnr`
+- Вкладка **«Сигнал»** в GUI: визуализация SFCW-лесенки во временной и частотной областях, таблица параметров сигнала
+- Параметры обзора в GUI: `survey_length`, `survey_width` (для антиалиасинга)
+- Параметры кинематики в GUI: `V`, `α`, `ω`, `PRI`, `num_pulses`
+- Подсказки (tooltips) ко всем полям ввода с физическим смыслом и формулами
+- Кнопка «Рассчитать РЛИ» для одиночного расчёта с уведомлениями на каждом этапе
+- Qt-сигнал `signal_data_ready` для проброса сырых данных во вкладку «Сигнал»
+- Демо-скрипты:
+  - `examples/demo_large_angle.py` — демонстрация проблемы «дуг» при больших Δθ
+  - `examples/demo_polar_reformatting_validation.py` — тройное сравнение (наивный 2D FFT / ближайший сосед / билинейная интерполяция + окно)
+  - `examples/test_data_processor_polar.py` — интеграционный тест конвейера с метриками
 
-### Changed
-- Refactored file structure for better maintainability
-- Optimized memory usage by saving results directly to disk
-- Adjusted default FFT size from 4096 to 1024
+### Изменено
+- GUI переработан: 4 → 5 вкладок (добавлена «Сигнал»), заголовок окна «IRSA — ISAR Radar Image Simulator», размер 1400×800
+- Верхняя панель разделена на три секции (спутник | параметры | кнопки) через горизонтальный QSplitter
+- Кнопка «Вывести результаты» заменена на «Запустить поток»/«Остановить» + таймер покадрового вывода
+- `AppConfig` дополнен полями `V`, `alpha`, `omega`, `pri`, `num_pulses`, `use_mocomp`, `window`, `display_mode`
+- Сигнатура `DataProcessor.__init__` расширена параметрами кинематики и обработки
+- `compute_isar_notified` маршрутизирует на `_compute_isar_standard` или `_compute_isar_polar` в зависимости от `self.method`
+- `range_compress` стал чистой функцией (без зависимости от `Radar`)
 
-### Removed
-- "Совмещенная цель" (combined target) option (no data available)
+### Исправлено
+- `DataProcessor.__init__`: значение `omega=0.0` (обозначающее «авто из beam_width») теперь корректно приводит к авто-расчёту; ранее из-за проверки `if omega is not None` нулевое значение трактовалось как «без вращения», и полярный конвейер молча откатывался на стандартный
 
-## [0.0.1] - 2026-01-01
+## [2.0.0] — 2026-06-04
 
-### Added
-- Initial release
-- Basic RLI processing
-- Simple GUI
+### Добавлено
+- Физическая кинематическая модель цели (поступательное + вращательное движение)
+- Генерация сырых данных SFCW (модуль `simulation/raw_generator.py`)
+- Сжатие по дальности: IFFT + дешифровка (dechirp) (`processing/range_compress.py`)
+- Компенсация движения MOCOMP: выравнивание огибающей + автофокус по фазе (`processing/mocomp.py`)
+- Азимутальное сжатие: FFT + оконные функции (`processing/azimuth_compress.py`)
+- Оркестратор `DataProcessor` с Qt-сигналами для промежуточных результатов
+- Метод `compute_isar_notified()` — полный конвейер с уведомлениями на каждом этапе
+- Интерфейс с 4 вкладками: профили дальности, MOCOMP, РЛИ, поток кадров
+- Параметры кинематики в UI: V, α, ω, PRI, число импульсов
+- Переключатель MOCOMP вкл/выкл, выбор оконной функции, режим отображения (linear/dB)
+- 3 демо-скрипта: идеальный разворот, размытие движением, полный конвейер с MOCOMP
+- 3 скрипта валидации: сжатие по дальности, MOCOMP, ISAR
+- Модульная архитектура: `models/`, `processing/`, `simulation/`
+
+### Изменено
+- Полная переработка UI: QTabWidget с вкладками вместо плоского layout
+- `DataProcessor` расширен параметрами `use_mocomp`, `window`, кинематикой
+- `AppConfig` расширен полями кинематики и обработки
+- Оси графиков отображают физические величины (м, Гц, рад/м)
+- Конвейер ISAR: Raw → Сжатие по дальности → MOCOMP → Азимутальное сжатие → Изображение
+
+### Удалено
+- Удалены устаревшие файлы: `parametrs.py`, `RLI.py`, `target.py` (корневой)
+- Удалены неиспользуемые UI-модули: `ui/dialogs.py`, `ui/widgets.py`
+
+## [1.0.0] — 2026-04-20
+
+### Добавлено
+- Основной интерфейс приложения на PyQt5
+- Конфигурация параметров радара (частота, спектр, размер FFT, ширина ДН, обзорная область, дальность)
+- Поддержка 5 спутников: cloudSAT, calipso, ICESat2, LRO, solarB
+- Два метода обработки: стандартный и с полярным переформатированием
+- Визуализация поля рассеяния и РЛИ в реальном времени
+- Пакетная обработка 16 кадров
+- Экспорт результатов в PNG
+- Сохранение конфигурации в JSON
+
+### Изменено
+- Рефакторинг файловой структуры для удобства сопровождения
+- Оптимизация памяти: сохранение результатов напрямую на диск
+- Изменён размер FFT по умолчанию: 4096 → 1024
+
+### Удалено
+- Параметр «Совмещённая цель» (данные недоступны)
+
+## [0.0.1] — 2026-01-01
+
+### Добавлено
+- Первоначальный релиз
+- Базовая обработка РЛИ
+- Простой графический интерфейс

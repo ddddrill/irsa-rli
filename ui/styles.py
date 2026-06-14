@@ -149,6 +149,24 @@ APP_STYLE = """
         font-style: italic;
     }
 
+    QLabel#status_error {
+        color: #e74c3c;
+        font-size: 11px;
+        font-weight: bold;
+    }
+
+    QLabel#status_warning {
+        color: #e67e22;
+        font-size: 11px;
+        font-style: italic;
+    }
+
+    QLabel#status_success {
+        color: #27ae60;
+        font-size: 11px;
+        font-weight: bold;
+    }
+
     QSplitter::handle {
         background-color: #dcdde1;
         width: 2px;
@@ -186,5 +204,69 @@ APP_STYLE = """
     QScrollBar::add-line:vertical,
     QScrollBar::sub-line:vertical {
         height: 0;
+    }
+
+    QTabWidget::pane {
+        border: 1px solid #dcdde1;
+        border-radius: 6px;
+        background-color: #ffffff;
+    }
+    QTabBar::tab {
+        background-color: #ecf0f1;
+        color: #7f8c8d;
+        border: 1px solid #dcdde1;
+        border-bottom: none;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        padding: 8px 16px;
+        margin-right: 2px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+    QTabBar::tab:selected {
+        background-color: #ffffff;
+        color: #3498db;
+        border-bottom: 2px solid #3498db;
+    }
+    QTabBar::tab:hover:!selected {
+        background-color: #ebf5fb;
+        color: #2c3e50;
+    }
+
+    QLabel#section_label {
+        font-size: 12px;
+        font-weight: bold;
+        color: #3498db;
+        padding: 6px 0 2px 0;
+        border-bottom: 1px solid #ebf5fb;
+        margin-top: 4px;
+    }
+
+    QCheckBox {
+        color: #2c3e50;
+        font-size: 12px;
+        spacing: 6px;
+    }
+    QCheckBox::indicator {
+        width: 16px;
+        height: 16px;
+        border: 1px solid #dcdde1;
+        border-radius: 3px;
+        background-color: #ffffff;
+    }
+    QCheckBox::indicator:checked {
+        background-color: #3498db;
+        border-color: #3498db;
+    }
+
+    QGroupBox#groupBox {
+        font-size: 13px;
+        font-weight: bold;
+        color: #2c3e50;
+        border: 1px solid #dcdde1;
+        border-radius: 8px;
+        margin-top: 12px;
+        padding: 16px 10px 10px 10px;
+        background-color: #ffffff;
     }
 """

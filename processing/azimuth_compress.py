@@ -69,20 +69,25 @@ def azimuth_compress(P_comp, omega, f_c, pri=1.0, window="none"):
     return I, azimuth_axis, doppler_axis
 
 
-def compute_amplitude(I, mode="linear", db_floor=-40.0):
+def compute_amplitude(I, mode="linear", db_floor=-40.0, normalize=True):
     """Вычислить амплитуду изображения для отображения.
 
     Args:
         I: комплексная матрица изображения.
-        mode: "linear" (|I|) или "db" (20*log10(|I|)).
-        db_floor: нижняя граница дБ (если mode="db").
+        mode: "linear" (|I|) или "dB" / "db" (20*log10(|I|)).
+        db_floor: нижняя граница дБ (если mode="dB").
+        normalize: если True и mode="dB", нормализовать так, чтобы max = 0 dB.
 
     Returns:
         amplitude: вещественная матрица амплитуд.
     """
     amp = np.abs(I)
-    if mode == "db":
+    if mode.lower() == "db":
         amp_db = 20.0 * np.log10(amp + 1e-30)
+        if normalize:
+            amp_max = amp_db.max()
+            if amp_max > 0:
+                amp_db = amp_db - amp_max
         amp_db = np.maximum(amp_db, db_floor)
         return amp_db
     return amp

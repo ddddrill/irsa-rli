@@ -121,8 +121,8 @@ class Target:
         Шаг 2.5: Абсолютные координаты и дальность.
             X_abs = X_cm + delta_x,  Y_abs = Y_cm + delta_y
         """
-        Vx = self.V * math.cos(self.alpha)
-        Vy = self.V * math.sin(self.alpha)
+        Vx = self.V * math.cos(math.radians(self.alpha))
+        Vy = self.V * math.sin(math.radians(self.alpha))
 
         X_cm = self.R0 + Vx * t_n
         Y_cm = Vy * t_n

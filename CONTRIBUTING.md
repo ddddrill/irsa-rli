@@ -71,22 +71,90 @@ update
 ## Структура проекта
 
 ```
-irsa/
-├── main.py          # Точка входа
-├── processing.py    # Обработка данных (изменяй здесь)
-├── parametrs.py     # Параметры
-├── RLI.py          # Методы обработки
-├── ui/             # Интерфейс
-│   └── main_window.py
-└── matrices/      # Данные (не трогать)
+VKR/
+├── main.py                          # Точка входа
+├── config.py                        # Конфигурация (AppConfig)
+├── filenames.py                     # Маппинг спутников на файлы
+├── models/
+│   ├── radar.py                     # Параметры радара SFCW (Radar)
+│   └── target.py                    # Кинематическая модель цели (Target)
+├── simulation/
+│   ├── raw_generator.py             # Генерация сырых данных SFCW
+│   ├── validate_range_compression.py
+│   ├── validate_mocomp.py
+│   └── validate_isar.py
+├── processing/
+│   ├── data_processor.py            # Оркестратор (DataProcessor, QThread)
+│   ├── range_compress.py            # Сжатие по дальности (IFFT + dechirp)
+│   ├── mocomp.py                    # Компенсация движения (MOCOMP)
+│   ├── azimuth_compress.py          # Азимутальное сжатие (FFT)
+│   ├── polar_reformat.py            # Полярное переформатирование (k-space)
+│   └── isar_processor.py            # StandardISARProcessor, PolarISARProcessor
+├── ui/
+│   ├── main_window.py               # Главное окно (QTabWidget, 5 вкладок)
+│   └── styles.py                    # Стили PyQt5
+├── examples/
+│   ├── demo_ideal_turntable.py               # Демо 1: Идеальный разворот (V=0)
+│   ├── demo_motion_blur.py                   # Демо 2: Размытие движением
+│   ├── demo_full_pipeline_mocomp.py          # Демо 3: Полный конвейер с MOCOMP
+│   ├── demo_large_angle.py                   # Демо 4: Проблема больших углов
+│   ├── demo_polar_reformatting_validation.py # Демо 5: Валидация полярки
+│   └── test_data_processor_polar.py          # Интеграционный тест + метрики
+├── matrices/                        # Данные рассеяния спутников (.pkl)
+├── sat_info_p/                      # Изображения и описания спутников
+├── assets/                          # Иконки, скриншоты
+├── radioimage/                      # Выходные директории с РЛИ
+├── requirements.txt                 # Зависимости
+└── LICENSE                          # MIT
 ```
+
+### Конвейер обработки
+
+**Стандартный** (малые углы, Δθ < 3°):
+
+```
+Raw SFCW → Range Compression → MOCOMP → Azimuth Compression → ISAR Image
+    ↓              ↓              ↓              ↓                ↓
+ E[M×N]         P[M×N]       P_comp[M×N]     I[M×N]          |I|[M×N]
+```
+
+**Полярное переформатирование** (большие углы, Δθ ≥ 3°):
+
+```
+Raw SFCW → Range Compression → MOCOMP → Polar Reformat → 2D IFFT → ISAR Image
+    ↓              ↓              ↓          ↓              ↓          ↓
+ E[M×N]         P[M×N]       P_comp[M×N]  E_cart[kx,ky]   I[M×N]    |I|[M×N]
+                                        (k,θ)→(kx,ky)
+                                        + Taylor window
+```
+
+Маршрутизация выбирается в `DataProcessor.compute_isar_notified()` по полю `self.method` или автоматически через `should_use_polar_reformat(omega, pri, N, threshold_deg=3.0)`.
 
 ## Тестирование
 
 Перед отправкой проверь что приложение:
-- ✓ Запускается без ошибок
-- ✓ Обрабатывает данные
-- ✓ Сохраняет изображения
+- Запускается без ошибок: `python main.py`
+- Одиночный РЛИ рассчитывается (кнопка «Рассчитать РЛИ»)
+- Все 5 вкладок заполняются (Сигнал, Профили дальности, Компенсация движения, РЛИ, Поток кадров)
+- Метод «с полярным переформатированием» даёт сфокусированное изображение (energy в top-1% пикселей > 30%)
+- Демо-скрипты работают без ошибок:
+
+```bash
+python -m examples.demo_ideal_turntable
+python -m examples.demo_motion_blur
+python -m examples.demo_full_pipeline_mocomp
+python -m examples.demo_large_angle
+python -m examples.demo_polar_reformatting_validation
+python -m examples.test_data_processor_polar
+```
+
+### Что считать «поломанным»
+
+- При стандартном методе с `Δθ < 3°` — точки должны быть сфокусированы
+- При стандартном методе с `Δθ ≥ 10°` — ожидаемы дуги/размазня (arc smearing)
+- При полярном методе с `Δθ ≥ 3°` — точки должны быть сфокусированы (это и есть назначение переформатирования)
+- В dB-режиме пиксели в фоне должны быть в диапазоне −30…−50 dB, точки — около 0 dB
+- В linear-режиме большинство значений близко к 0, яркие пятна — единицы (это нормально, изображение выглядит «тёмным»)
 
 ## Вопросы
 
@@ -95,4 +163,4 @@ irsa/
 
 ---
 
-Спасибо за участие! 🎉
+Спасибо за участие!
