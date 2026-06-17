@@ -210,10 +210,17 @@ class DataProcessor(QThread):
 
     def _compute_isar_polar_sync(self, E, f_r, target):
         """Синхронный конвейер с полярным переформатированием (без эмиссии сигналов)."""
-        kspace = build_kspace_grid(f_r, self.omega, self.pri, E.shape[1])
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        if self.use_mocomp:
+            P, _, _, _ = mocomp(P, range_axis)
+            E_comp = np.fft.fft(np.fft.ifftshift(P, axes=0), axis=0)
+        else:
+            E_comp = E
+
+        kspace = build_kspace_grid(f_r, self.omega, self.pri, E_comp.shape[1])
         k, theta = kspace["k"], kspace["theta"]
         grid = design_cartesian_grid(k, theta, self.Xmax, self.Ymax)
-        E_cart = interpolate_polar_to_cartesian(E, k, theta, grid, method="linear")
+        E_cart = interpolate_polar_to_cartesian(E_comp, k, theta, grid, method="linear")
         blind = process_blind_zones(
             E_cart, grid["kx_axis"], grid["ky_axis"],
             window_type="taylor", apply_zero_pad=True, pad_factor=2, nbar=4, sll=-35.0,

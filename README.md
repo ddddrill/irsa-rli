@@ -286,6 +286,7 @@ VKR/
 ├── assets/                          # Иконки, скриншоты
 ├── radioimage/                      # Выходные директории с PNG-кадрами
 │
+├── run.bat                          # Лаунчер (двойной клик)
 ├── requirements.txt                 # Python-зависимости
 ├── README.md                        # Этот файл
 ├── CHANGELOG.md                     # История изменений
@@ -380,8 +381,8 @@ python -m examples.test_data_processor_polar
 ```bash
 git clone https://github.com/ddddrill/irsa.git
 cd irsa
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .build_venv
+.build_venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 ```
 
@@ -391,9 +392,17 @@ pip install -r requirements.txt
 
 ### GUI
 
-```bash
-python main.py
+**Windows (двойной клик):**
 ```
+run.bat
+```
+
+**Из терминала:**
+```bash
+.build_venv\Scripts\python.exe main.py
+```
+
+**VS Code:** открой папку проекта → `Ctrl+Shift+P` → `Python: Select Interpreter` → выбери `Python 3.12 (.build_venv)`. Терминал автоматически активирует venv.
 
 Откроется главное окно. Базовая последовательность:
 1. Выбрать спутник (например, `solarB`)
@@ -454,7 +463,7 @@ python -m examples.test_data_processor_polar
 
 Перед отправкой изменений проверь:
 
-1. **GUI запускается:** `python main.py`
+1. **GUI запускается:** `run.bat` или `.build_venv\Scripts\python.exe main.py`
 2. **Все 5 вкладок заполняются** при нажатии «Рассчитать РЛИ»
 3. **Метод «с полярным переформатированием»** даёт сфокусированное изображение
 4. **Все 6 демо-скриптов** запускаются без ошибок и сохраняют PNG
@@ -463,9 +472,11 @@ python -m examples.test_data_processor_polar
 
 | Ситуация | Ожидание |
 |----------|----------|
-| Стандартный метод, Δθ < 3° | Точки сфокусированы |
+| Стандартный метод, Δθ < 3°, V=0 | Точки сфокусированы |
+| Стандартный метод, Δθ < 3°, V≠0 + MOCOMP | Точки сфокусированы (Range Walk и фаза скомпенсированы) |
 | Стандартный метод, Δθ ≥ 10° | Ожидаемы дуги/размазня (arc smearing) |
 | Полярный метод, Δθ ≥ 3° | Точки сфокусированы |
+| Полярный метод, Δθ ≥ 3°, V≠0 + MOCOMP | Точки сфокусированы |
 | dB-режим | Пиксели фона −30…−50 dB, точки около 0 dB |
 | linear-режим | Большинство значений близко к 0, яркие пятна — единицы (выглядит «тёмным») |
 | `energy in top-1%` > 30% | Изображение сфокусировано |

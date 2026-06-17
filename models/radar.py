@@ -88,7 +88,7 @@ class Radar:
             self.ph_c + self.dph * (self.Nph / 2) - self.dph,
             self.Nph,
         )
-        self.k_r = 2 * math.pi * self.f_r / self.c
+        self.k_r = 4 * math.pi * self.f_r / self.c
 
         self.Nf = math.ceil((self.Xmax * self.spectr_w * 2) / self.c)
         self.Nph = math.ceil((2 * self.Ymax * self.ph_w * self.f_c) / self.c)

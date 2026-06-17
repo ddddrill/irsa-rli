@@ -466,7 +466,7 @@ def taylor_window_1d(n, nbar=4, sll=-35.0):
         num = 1.0
         for j in range(1, nbar):
             if i != j:
-                num *= 1.0 - (float(i) / float(j)) ** 2
+                num *= 1.0 - (float(i) ** 2) / (sigma ** 2 * (A ** 2 + (float(j) - 0.5) ** 2))
         denom = 1.0
         for j in range(1, nbar):
             if i != j:
@@ -660,8 +660,8 @@ def form_image_2d(E_k_space, dkx, dky):
     x_span = 2.0 * np.pi / dkx
     y_span = 2.0 * np.pi / dky
 
-    x_axis = np.linspace(-x_span / 2.0, x_span / 2.0, M)
-    y_axis = np.linspace(-y_span / 2.0, y_span / 2.0, N)
+    x_axis = (np.arange(M) - (M - 1) / 2.0) * (x_span / M)
+    y_axis = (np.arange(N) - (N - 1) / 2.0) * (y_span / N)
 
     return I_complex, x_axis, y_axis, x_span, y_span
 
@@ -867,7 +867,8 @@ def compute_isnr(I_focused, I_blurred):
 
 
 def smart_pipeline(E, f_r, radar, target, omega, pri, num_pulses,
-                   threshold_deg=3.0, Xmax_scene=50.0, Ymax_scene=50.0):
+                   threshold_deg=3.0, Xmax_scene=50.0, Ymax_scene=50.0,
+                   use_mocomp=True):
     """Шаг 7.2: Умный конвейер — автоматическое переключение режимов.
 
     Если Delta_theta >= threshold: полярная переформатизация + 2D IFFT.
@@ -914,7 +915,10 @@ def smart_pipeline(E, f_r, radar, target, omega, pri, num_pulses,
         # Стандартный конвейер: 1D + 1D
         from processing.range_compress import range_compress
         from processing.azimuth_compress import azimuth_compress, compute_amplitude
+        from processing.mocomp import mocomp as mocomp_fn
         P, P_abs, range_axis, dr = range_compress(E, f_r, R0=target.R0)
+        if use_mocomp:
+            P, _, _, _ = mocomp_fn(P, range_axis)
         I, azimuth_axis, _ = azimuth_compress(
             P.astype(np.complex128), omega, radar.f_c, pri=pri
         )

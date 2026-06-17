@@ -66,7 +66,7 @@ def phase_autofocus(P_aligned, range_axis=None):
     """
     M, N = P_aligned.shape
 
-    mean_amplitude = np.mean(P_aligned, axis=1)
+    mean_amplitude = np.mean(np.abs(P_aligned), axis=1)
     ref_bin = np.argmax(mean_amplitude)
 
     phase_errors = np.angle(P_aligned[ref_bin, :])

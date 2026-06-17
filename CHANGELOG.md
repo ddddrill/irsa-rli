@@ -5,6 +5,28 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 проект придерживается [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-06-17
+
+### Исправлено
+- **CRITICAL**: `mocomp.py` — опорный бин в `phase_autofocus` выбирался по среднему комплексных значений вместо среднего модулей (`np.mean(P)` → `np.mean(np.abs(P))`). Без этого MOCOMP не работал на движущихся целях.
+- **CRITICAL**: `isar_processor.py` — `compute_field` содержала лишний член `2·k·y` в фазе и положительный знак экспоненты. Формула приведена к канонической: `exp(-1j·2·(k·cosθ·x + k·sinθ·y))`.
+- **CRITICAL**: `polar_reformat.py` — окно Тейлора `taylor_window_1d`: `num` и `denom` вычисляли одинаковый продукт, что давало F[i]≡1 и уровень боковых лепестков ~−13 дБ вместо −35 дБ. Исправлена формула коэффициентов Тейлора.
+- **CRITICAL**: `models/radar.py` — `polar_img_params` использовал `k_r = 2π·f/c` (одностороннее), тогда как `polar_reformat.py` использует `4π·f/c` (round-trip). Выровнено до `4π·f/c`.
+- `isar_processor.py` — `compute_image`: нормировка `1/(FR·PH)` заменена на стандартную `fftshift(ifft2(...))`.
+- `isar_processor.py` — `PolarISARProcessor.compute_image`: опечатка `Nifft_fr` → `Nifft_ph` в формуле `ifft_y_p`.
+- `isar_processor.py` — `compute_field`: убрано использование `np.vectorize(math.cos)`, теперь `np.cos`/`np.sin` через `np.multiply.outer` (в 10–100× быстрее).
+
+### Добавлено
+- `polar_reformat.py` — `smart_pipeline` принимает параметр `use_mocomp` и вызывает MOCOMP в стандартной ветке (ранее пропускал компенсацию движения).
+- `data_processor.py` — `_compute_isar_polar_sync` теперь включает range_compress + MOCOMP (ранее дублировал `_compute_isar_polar` без компенсации).
+- `models/target.py` — исправлен docstring: `alpha` задаётся в градусах, не в радианах.
+- `run.bat` — скрипт-лаунчер для запуска приложения двойным кликом.
+- `.vscode/settings.json` — настройка Python-интерпретатора и автозапуска venv.
+
+### Изменено
+- `processing/polar_reformat.py` — оси `x_axis`/`y_axis` в `form_image_2d` теперь используют `(arange - center) * step` вместо `linspace` (корректный нуль в центре для чётных размеров).
+- `processing/range_compress.py` — `range_axis` упрощён для читаемости.
+
 ## [2.1.0] — 2026-06-05
 
 ### Добавлено

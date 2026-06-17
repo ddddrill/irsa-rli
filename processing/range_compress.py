@@ -39,7 +39,6 @@ def range_compress(E, f_r, R0=0.0):
     df = B / (M - 1) if M > 1 else B / M
     dr = SPEED_OF_LIGHT / (2.0 * M * df)
 
-    range_axis = np.arange(M) * dr
-    range_axis = range_axis - range_axis[M - 1] / 2.0
+    range_axis = (np.arange(M) - (M - 1) / 2.0) * dr
 
     return P, P_abs, range_axis, dr

@@ -26,7 +26,12 @@ class StandardISARProcessor:
         self.exp_v = exp_v
 
     def compute_field(self, intens, x, y):
-        """Вычислить поле обратного рассеяния Es (старая формула, для совместимости)."""
+        """Вычислить поле обратного рассеяния Es.
+
+        Формула ( far-field, дешифровка по R0):
+            phi_i = -2 * k_r * (x_i * cos(theta) + y_i * sin(theta))
+            Es[m, n] = sum_i sigma_i * exp(j * phi_i)
+        """
         Es = np.zeros(
             (self.Nf, self.Nph), dtype="complex128"
         )
@@ -34,11 +39,8 @@ class StandardISARProcessor:
         ms_sin = np.multiply.outer(self.k_r, np.sin(self.ph_r))
 
         for i in range(len(intens)):
-            k_col = self.k_r[:, np.newaxis]
-            ij = intens[i] * self.exp_v(
-                self.complex_v(
-                    0, 2 * k_col * y[i] + 2 * ms_cos * x[i] + 2 * ms_sin * y[i]
-                )
+            ij = intens[i] * np.exp(
+                -1j * 2.0 * (ms_cos * x[i] + ms_sin * y[i])
             )
             Es += ij
 
@@ -73,22 +75,18 @@ class StandardISARProcessor:
 
     def compute_image(self, Es):
         """Вычислить РЛИ из поля обратного рассеяния (2D IFFT)."""
-        ifft_x = (self.Nifft_fr * self.FR) / self.Nf
         fz = self.Nifft_fr * self.df
         dt = 1 / fz
         t = np.arange(0, self.Nifft_fr) * dt
         xz = (t * 3e8) / 2
         xz = xz - xz[self.Nifft_fr - 1] / 2
 
-        ifft_y = (self.Nifft_ph * self.PH) / self.Nph
-        kz = self.Nifft_fr * self.dph
+        kz = self.Nifft_ph * self.dph
         dlen = 1 / kz
         leng = np.arange(0, self.Nifft_ph) * dlen
         leng = leng - leng[self.Nifft_ph - 1] / 2
 
-        isar = (
-            ifft_x * ifft_y * fftshift(ifft2(Es, s=[self.Nifft_fr, self.Nifft_ph]))
-        ) / (self.FR * self.PH)
+        isar = fftshift(ifft2(Es, s=[self.Nifft_fr, self.Nifft_ph]))
 
         return isar, xz, leng
 
@@ -136,7 +134,7 @@ class PolarISARProcessor:
 
         K_y = np.amax(grid_y) - np.amin(grid_y)
         dky = grid_y[0][1] - grid_y[0][0]
-        ifft_y_p = (self.Nifft_fr * K_y) / (self.Nph * self.M * np.pi)
+        ifft_y_p = (self.Nifft_ph * K_y) / (self.Nph * self.M * np.pi)
         kz_yp = self.Nifft_fr * dky
         dlen_yp = np.pi / kz_yp
         len_yp = np.arange(0, self.Nifft_ph) * dlen_yp
