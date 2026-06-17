@@ -1,6 +1,6 @@
-numpy>=1.24
-scipy>=1.10
-matplotlib>=3.7
+numpy<2
+scipy<1.12
+matplotlib<3.9
 PyQt5>=5.15
 opencv-python>=4.7
 pyqtgraph>=0.13

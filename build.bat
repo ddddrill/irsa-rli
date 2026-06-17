@@ -4,7 +4,7 @@ echo === Building IRSA ===
 if not exist .build_venv (
     echo Creating venv...
     python -m venv .build_venv
-    .build_venv\Scripts\pip.exe install numpy scipy matplotlib PyQt5 opencv-python pyqtgraph Pillow "pyinstaller==5.13.2" "setuptools<71"
+    .build_venv\Scripts\pip.exe install "numpy<2" "scipy<1.12" "matplotlib<3.9" PyQt5 opencv-python pyqtgraph Pillow "pyinstaller==5.13.2" "setuptools<71"
 )
 
 if exist dist rmdir /s /q dist
