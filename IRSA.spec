@@ -2,6 +2,8 @@
 
 import os
 
+os.environ["PYINSTALLER_ISOLATED_BUILD"] = "0"
+
 block_cipher = None
 
 ROOT = os.path.abspath('.')
@@ -39,6 +41,8 @@ a = Analysis(
         'jupyter',
         'notebook',
         'tkinter',
+        'setuptools',
+        'pkg_resources',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
