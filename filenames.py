@@ -1,5 +1,7 @@
 import os
 
+from paths import resource_path
+
 SATELLITE_NAMES = {
     "cloudSAT": "cloudSAT",
     "calipso": "calipso",
@@ -10,7 +12,7 @@ SATELLITE_NAMES = {
 
 ORBIT_SUFFIX = "_high.pkl"
 
-MATRICES_DIR = "matrices"
+MATRICES_DIR = resource_path("matrices")
 
 
 def get_matrix_filename(satellite: str) -> str:

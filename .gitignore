@@ -30,6 +30,8 @@ env/
 
 # PyInstaller
 *.spec
+build/
+dist/
 
 # PyQt
 *.ui

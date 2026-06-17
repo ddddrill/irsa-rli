@@ -6,9 +6,10 @@ import logging.handlers
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 
+from paths import resource_path, app_dir
 from ui.main_window import MainWindow
 
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LOG_DIR = os.path.join(app_dir(), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
@@ -30,7 +31,7 @@ logging.getLogger().addHandler(_file_handler)
 
 def main():
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon("icon.ico"))
+    app.setWindowIcon(QIcon(resource_path("assets/icon.ico")))
     app.setStyle("Fusion")
     window = MainWindow()
     window.show()

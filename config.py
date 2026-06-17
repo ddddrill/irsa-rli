@@ -2,7 +2,9 @@ from dataclasses import dataclass, asdict, fields
 import json
 import os
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+from paths import app_dir
+
+CONFIG_PATH = os.path.join(app_dir(), "config.json")
 
 
 @dataclass
@@ -28,6 +30,7 @@ class AppConfig:
     use_mocomp: bool = True             # включить компенсацию движения
     window: str = "none"                # оконная функция: none, hamming, hann
     display_mode: str = "dB"            # режим отображения: linear, dB
+    snr_db: float = float('inf')        # SNR в дБ (inf = без шума)
 
     @property
     def range_m(self) -> float:

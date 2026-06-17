@@ -3,6 +3,37 @@ import numpy as np
 SPEED_OF_LIGHT = 3e8
 
 
+def add_complex_awgn(E_clean, snr_db):
+    """Добавить комплексный аддитивный белый гауссовский шум (Complex AWGN).
+
+    Физика шума:
+        - Вещественная и мнимая части шума — независимые N(0,1)
+        - Мощность комплексного шума = сумма мощностей Re и Im частей
+
+    Args:
+        E_clean: чистая комплексная матрица M×N.
+        snr_db: отношение сигнал/шум в децибелах.
+                 np.inf — вернуть чистый сигнал без шума.
+
+    Returns:
+        E_noisy: зашумленная матрица M×N.
+    """
+    if np.isinf(snr_db) or snr_db > 1000:
+        return E_clean
+
+    P_signal = np.mean(np.abs(E_clean) ** 2)
+
+    SNR_lin = 10.0 ** (snr_db / 10.0)
+    P_noise = P_signal / SNR_lin
+
+    M, N = E_clean.shape
+    N_raw = np.random.randn(M, N) + 1j * np.random.randn(M, N)
+
+    N_scaled = np.sqrt(P_noise / 2.0) * N_raw
+
+    return E_clean + N_scaled
+
+
 def generate_raw_matrix_loop(radar, target):
     """Сгенерировать матрицу сырых данных SFCW вложенными циклами (черновик).
 
@@ -60,11 +91,11 @@ def generate_raw_matrix(radar, target):
     E[m, n] = sum_i intens_i * exp(j * phi[i, n])
 
     Args:
-        radar: объект Radar.
+        radar: объект Radar (содержит snr_db).
         target: объект Target.
 
     Returns:
-        E: комплексная матрица M×N.
+        E: комплексная матрица M×N (зашумлена, если snr_db задан).
         f_r: вектор частот (M,).
     """
     _, _, f_r, _, _, _, _, _, _, _, _ = radar.base_img_params()
@@ -83,6 +114,8 @@ def generate_raw_matrix(radar, target):
 
     phi = -4.0 * np.pi * f_col / SPEED_OF_LIGHT * R_row
 
-    E = np.sum(s_col * np.exp(1j * phi), axis=2)
+    E_clean = np.sum(s_col * np.exp(1j * phi), axis=2)
 
-    return E, f_r
+    E_noisy = add_complex_awgn(E_clean, radar.snr_db)
+
+    return E_noisy, f_r

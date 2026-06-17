@@ -2,6 +2,8 @@ import math
 import os
 import numpy as np
 
+from paths import resource_path
+
 NUM_IMAGES = 16
 SPEED_OF_LIGHT = 3e8
 
@@ -44,9 +46,7 @@ class Target:
 
     def _load_data(self):
         if self._raw_tensor is None:
-            detail_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "..", self.file
-            )
+            detail_path = resource_path(self.file)
             self._raw_tensor = np.load(detail_path, allow_pickle=True)
         return self._raw_tensor
 

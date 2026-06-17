@@ -10,7 +10,7 @@ class Radar:
     необходимые для формирования поля обратного рассеяния и РЛИ.
     """
 
-    def __init__(self, c, f_c, Xmax, Ymax, spectr_w, ph_c, ang, nifft_size=1024):
+    def __init__(self, c, f_c, Xmax, Ymax, spectr_w, ph_c, ang, nifft_size=1024, snr_db=np.inf):
         self.c = c
         self.f_c = f_c
         self.Xmax = Xmax
@@ -19,6 +19,7 @@ class Radar:
         self.ph_c = ph_c
         self.ang = ang
         self.nifft_size = nifft_size
+        self.snr_db = snr_db
 
         self.k_c = (2 * math.pi * f_c) / self.c
         self.ph_w = math.radians(self.ang)

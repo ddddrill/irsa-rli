@@ -16,14 +16,14 @@ from PyQt5.QtCore import Qt, QTimer, QRectF, QThread
 from PyQt5.QtGui import QPixmap
 
 from config import AppConfig
+from paths import resource_path, app_dir
 from filenames import get_matrix_filename
 from processing import DataProcessor
 from ui.styles import APP_STYLE
 
 logger = logging.getLogger(__name__)
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SATELLITE_DIR = os.path.join(BASE_DIR, "sat_info_p")
+SATELLITE_DIR = resource_path("sat_info_p")
 SPEED_OF_LIGHT = 3e8
 
 
@@ -172,6 +172,12 @@ class MainWindow(QMainWindow):
         radar_grid.addWidget(self.le_nifft[0], 1, 0); radar_grid.addWidget(self.le_nifft[1], 1, 1)
         radar_grid.addWidget(self.le_beam[0], 1, 2); radar_grid.addWidget(self.le_beam[1], 1, 3)
         radar_grid.addWidget(self.le_range[0], 2, 0); radar_grid.addWidget(self.le_range[1], 2, 1)
+        self.le_snr = self._make_input_widget(
+            "SNR, дБ", self.cfg.snr_db,
+            tooltip="Отношение сигнал/шум (дБ). inf = без шума.\n"
+                    "20 = сильный сигнал, 0 = сигнал=шум, -5 = шум сильнее сигнала.",
+        )
+        radar_grid.addWidget(self.le_snr[0], 2, 2); radar_grid.addWidget(self.le_snr[1], 2, 3)
         layout.addLayout(radar_grid)
 
         # Параметры обзора
@@ -583,6 +589,7 @@ class MainWindow(QMainWindow):
         self.cfg.use_mocomp = self.chk_mocomp.isChecked()
         self.cfg.window = self.cb_window.currentText()
         self.cfg.display_mode = self.cb_display.currentText()
+        self.cfg.snr_db = self._safe_float(self.le_snr[1], self.cfg.snr_db)
 
         self.cfg.save()
 
@@ -656,6 +663,7 @@ class MainWindow(QMainWindow):
             use_mocomp=self.cfg.use_mocomp,
             window=self.cfg.window,
             display_mode=self.cfg.display_mode,
+            snr_db=self.cfg.snr_db,
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -786,7 +794,7 @@ class MainWindow(QMainWindow):
             self._on_error(f"Ошибка конфигурации: {e}")
             return
 
-        save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "radioimage")
+        save_dir = os.path.join(app_dir(), "radioimage")
 
         self.processor = DataProcessor(
             filename=filename,
@@ -806,6 +814,7 @@ class MainWindow(QMainWindow):
             use_mocomp=self.cfg.use_mocomp,
             window=self.cfg.window,
             display_mode=self.cfg.display_mode,
+            snr_db=self.cfg.snr_db,
             save_dir=save_dir,
             mode="stream",
         )
@@ -847,7 +856,7 @@ class MainWindow(QMainWindow):
     # ================================================================
 
     def _show_stream_results(self):
-        save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "radioimage")
+        save_dir = os.path.join(app_dir(), "radioimage")
         if not os.path.exists(save_dir):
             self.info_label.setText("Нет сохранённых результатов")
             return

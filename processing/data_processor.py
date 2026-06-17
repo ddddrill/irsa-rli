@@ -61,7 +61,7 @@ class DataProcessor(QThread):
     def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
                  nifft_size=1024, save_dir=None, mode="single",
                  V=0.0, alpha=0.0, omega=None, pri=1.0, num_pulses=NUM_IMAGES,
-                 use_mocomp=True, window="none", display_mode="dB"):
+                 use_mocomp=True, window="none", display_mode="dB", snr_db=float('inf')):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -83,6 +83,7 @@ class DataProcessor(QThread):
         self.num_pulses = num_pulses
         self.use_mocomp = use_mocomp
         self.window = window
+        self.snr_db = snr_db
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -97,6 +98,7 @@ class DataProcessor(QThread):
             ph_c=0.0,
             ang=self.ang,
             nifft_size=self.nifft_size,
+            snr_db=self.snr_db,
         )
         self.v_cos, self.v_sin, self.v_exp, self.v_complx, self.v_floor = (
             self.radar.vectorize_functions()
