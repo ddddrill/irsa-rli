@@ -1,14 +1,4 @@
 @echo off
 echo === Building IRSA ===
-
-echo [1/2] Installing PyInstaller...
-pip install pyinstaller
-
-echo [2/2] Building IRSA...
-set PYINSTALLER_ISOLATED_BUILD=0
-python -m PyInstaller IRSA.spec --noconfirm
-
-echo.
-echo === Build complete ===
-echo Output: dist\IRSA\IRSA.exe
+python build.py
 pause
