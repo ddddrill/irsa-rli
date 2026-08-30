@@ -22,7 +22,8 @@ class Target:
     """
 
     def __init__(self, file, pri=1.0, num_pulses=NUM_IMAGES,
-                 R0=0.0, V=0.0, alpha=0.0, omega=0.0):
+                 R0=0.0, V=0.0, alpha=0.0, omega=0.0,
+                 accel=0.0, vib_amplitude=0.0, vib_frequency=1.0):
         """
         Args:
             file: путь к файлу .npy с данными рассеивателей.
@@ -32,6 +33,11 @@ class Target:
             V: модуль поступательной скорости (м/с).
             alpha: угол направления движения (град) относительно RLOS.
             omega: угловая скорость вращения вокруг ЦМ (рад/с).
+            accel: ускорение ЦМ вдоль направления alpha (м/с²).
+                   Даёт квадратичную фазовую ошибку по медленному времени.
+            vib_amplitude: амплитуда микровибрации ЦМ по дальности (м).
+                   Гармоническое микродоплеровское движение (по умолчанию 0).
+            vib_frequency: частота микровибрации (Гц).
         """
         self.file = file
         self.pri = pri
@@ -40,6 +46,9 @@ class Target:
         self.V = V
         self.alpha = alpha
         self.omega = omega
+        self.accel = accel
+        self.vib_amplitude = vib_amplitude
+        self.vib_frequency = vib_frequency
 
         self._raw_tensor = None
         self._scatterers = None
@@ -106,12 +115,39 @@ class Target:
             ranges[n] = np.sqrt(x_abs ** 2 + y_abs ** 2)
         return ranges
 
+    def get_cross_range_all(self):
+        """Матрица поперечных координат рассеивателей (num_pulses, num_scatterers).
+
+        Поперечная координата Y_abs — проекция положения точки на ось,
+        перпендикулярную линии визия. Нужна для модели затенения.
+        """
+        sc = self._load_scatterers()
+        y_all = np.zeros((self.num_pulses, len(sc["intens"])))
+        for n in range(self.num_pulses):
+            t_n = self.slow_time(n)
+            _, y_abs = self._absolute_positions(t_n, sc["x0"], sc["y0"])
+            y_all[n] = y_abs
+        return y_all
+
+    def get_aspect_angles(self):
+        """Углы наблюдения рассеивателей (радиан) — theta_n = omega * t_n.
+
+        Возвращает массив shape (num_pulses,). При omega=0 все углы нулевые.
+        Используется для модели анизотропии рассеивателей.
+        """
+        n = np.arange(self.num_pulses)
+        return self.omega * n * self.pri
+
     def _absolute_positions(self, t_n, x0, y0):
         """Вычислить абсолютные координаты рассеивателей в момент t_n.
 
-        Шаг 2.3: Поступательное движение ЦМ.
+        Шаг 2.3: Поступательное движение ЦМ (с опциональным ускорением).
             Vx = V * cos(alpha),  Vy = V * sin(alpha)
-            X_cm = R0 + Vx * t_n,  Y_cm = Vy * t_n
+            X_cm = R0 + Vx * t_n + 0.5 * a * cos(alpha) * t_n^2
+            Y_cm = Vy * t_n + 0.5 * a * sin(alpha) * t_n^2
+
+        Шаг 2.3а: Микровибрация ЦМ по дальности (микродоплер).
+            X_cm += A_vib * sin(2*pi*f_vib*t_n)
 
         Шаг 2.4: Вращательное движение вокруг ЦМ.
             theta = omega * t_n
@@ -120,12 +156,23 @@ class Target:
 
         Шаг 2.5: Абсолютные координаты и дальность.
             X_abs = X_cm + delta_x,  Y_abs = Y_cm + delta_y
+
+        При accel=0 и vib_amplitude=0 формулы совпадают с классической
+        линейной моделью (обратная совместимость).
         """
-        Vx = self.V * math.cos(math.radians(self.alpha))
-        Vy = self.V * math.sin(math.radians(self.alpha))
+        alpha_rad = math.radians(self.alpha)
+        Vx = self.V * math.cos(alpha_rad)
+        Vy = self.V * math.sin(alpha_rad)
 
         X_cm = self.R0 + Vx * t_n
         Y_cm = Vy * t_n
+
+        if self.accel != 0.0:
+            X_cm += 0.5 * self.accel * math.cos(alpha_rad) * t_n ** 2
+            Y_cm += 0.5 * self.accel * math.sin(alpha_rad) * t_n ** 2
+
+        if self.vib_amplitude != 0.0:
+            X_cm += self.vib_amplitude * math.sin(2.0 * math.pi * self.vib_frequency * t_n)
 
         theta = self.omega * t_n
         cos_t = math.cos(theta)

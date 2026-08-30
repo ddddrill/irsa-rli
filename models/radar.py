@@ -42,6 +42,10 @@ class Radar:
     def vectorize_functions(self):
         return self.cos, self.sin, self.exp, self.complex_v, self.floor
 
+    def beam_width_deg(self):
+        """Ширина диаграммы направленности в градусах (для модели антенны)."""
+        return math.degrees(self.ph_w)
+
     def base_img_params(self):
         """Параметры для формирования РЛИ стандартным методом."""
         self.Nf = math.ceil((self.Xmax * self.spectr_w * 2) / self.c)
