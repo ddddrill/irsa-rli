@@ -252,9 +252,149 @@ class MainWindow(QMainWindow):
         proc_layout.addStretch()
         layout.addLayout(proc_layout)
 
+        # Эффекты реализма
+        self._build_realism_section(layout)
+
         layout.addStretch()
         scroll.setWidget(container)
         return scroll
+
+    # ---------- Эффекты реализма ----------
+
+    def _build_realism_section(self, layout):
+        """Секция «Реализм»: пресет + чекбоксы/поля эффектов."""
+        layout.addWidget(self._section_label("Реализм модели"))
+
+        preset_lbl, self.cb_realism_preset = self._make_combo_widget(
+            "Пресет", ["Идеальный", "Реалистичный", "Пользовательский"],
+            getattr(self.cfg, "realism_preset", "Идеальный"),
+        )
+        self.cb_realism_preset.currentTextChanged.connect(self._on_realism_preset)
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(preset_lbl)
+        preset_row.addWidget(self.cb_realism_preset)
+        preset_row.addStretch()
+        layout.addLayout(preset_row)
+
+        eff_grid = QGridLayout()
+        eff_grid.setSpacing(4)
+
+        self.chk_complex_sigma = QCheckBox("Случайные фазы рассеивателей")
+        self.chk_complex_sigma.setChecked(self.cfg.use_complex_sigma)
+        self.chk_complex_sigma.setToolTip(
+            "sigma_i * exp(j*phi_i), phi_i ~ U(0, 2*pi).\n"
+            "Реальные центры рассеяния имеют случайную фазу — картинка "
+            "становится «спекл-подобной» вместо детерминированной."
+        )
+
+        self.chk_anisotropy = QCheckBox("Анизотропия рассеяния")
+        self.chk_anisotropy.setChecked(self.cfg.use_anisotropy)
+        self.chk_anisotropy.setToolTip(
+            "Гауссова угловая зависимость sigma_i(theta):\n"
+            "отражатель «светится» в пределах ширины лепестка."
+        )
+        self.le_aniso_width = self._make_input_widget(
+            "Ширина лепестка, град", self.cfg.anisotropy_width_deg,
+            tooltip="Ширина гауссова лепестка анизотропии (град).",
+        )
+
+        self.chk_shadowing = QCheckBox("Затенение рассеивателей")
+        self.chk_shadowing.setChecked(self.cfg.use_shadowing)
+        self.chk_shadowing.setToolTip(
+            "Точка за панелью не видна: гасится, если ближе по линии визия\n"
+            "есть другой рассеиватель с поперечным смещением < радиуса."
+        )
+        self.le_shadow_radius = self._make_input_widget(
+            "Радиус затенения, м", self.cfg.shadow_radius_m,
+            tooltip="Поперечный радиус «тени» (м).",
+        )
+
+        self.chk_antenna = QCheckBox("ДН антенны (двухпутевая)")
+        self.chk_antenna.setChecked(self.cfg.use_antenna_pattern)
+        self.chk_antenna.setToolTip(
+            "Амплитуда эха взвешивается на G^2(theta):\n"
+            "гауссова ДН с шириной из поля «Ширина ДН» + ошибка наведения."
+        )
+        self.le_pointing = self._make_input_widget(
+            "Ошибка наведения, град", self.cfg.pointing_error_deg,
+            tooltip="Постоянное отклонение луча от цели (град).",
+        )
+        self.le_drift = self._make_input_widget(
+            "Дрейф луча, град", self.cfg.antenna_drift_deg,
+            tooltip="Линейный дрейф отклонения за апертуру (град).",
+        )
+
+        self.chk_phase_noise = QCheckBox("Фазовый шум генератора")
+        self.chk_phase_noise.setChecked(self.cfg.use_phase_noise)
+        self.chk_phase_noise.setToolTip(
+            "Винеровский фазовый процесс exp(j*phi(t_n)):\n"
+            "главный источник расфокусировки на секундных накоплениях."
+        )
+        self.le_phase_std = self._make_input_widget(
+            "RMS фазы, град", self.cfg.phase_noise_std_deg,
+            tooltip="RMS фазового набега за апертуру (град). 10 = заметная расфокусировка.",
+        )
+
+        self.le_accel = self._make_input_widget(
+            "Ускорение, м/с²", self.cfg.accel,
+            tooltip="Ускорение цели вдоль направления движения.\n"
+                    "Даёт квадратичную фазовую ошибку — классический кейс для автофокуса.",
+        )
+        self.le_vib_amp = self._make_input_widget(
+            "Микровибрация, мм", self.cfg.vib_amplitude_mm,
+            tooltip="Амплитуда гармонической микровибрации по дальности (мм).\n"
+                    "Создаёт микродоплеровские осцилляции фазы.",
+        )
+        self.le_vib_freq = self._make_input_widget(
+            "Частота вибрации, Гц", self.cfg.vib_frequency_hz,
+            tooltip="Частота микровибрации (Гц).",
+        )
+
+        eff_grid.addWidget(self.chk_complex_sigma, 0, 0, 1, 2)
+        eff_grid.addWidget(self.chk_anisotropy, 1, 0)
+        eff_grid.addWidget(self.le_aniso_width[0], 1, 1); eff_grid.addWidget(self.le_aniso_width[1], 1, 2)
+        eff_grid.addWidget(self.chk_shadowing, 2, 0)
+        eff_grid.addWidget(self.le_shadow_radius[0], 2, 1); eff_grid.addWidget(self.le_shadow_radius[1], 2, 2)
+        eff_grid.addWidget(self.chk_antenna, 3, 0)
+        eff_grid.addWidget(self.le_pointing[0], 3, 1); eff_grid.addWidget(self.le_pointing[1], 3, 2)
+        eff_grid.addWidget(self.le_drift[0], 4, 1); eff_grid.addWidget(self.le_drift[1], 4, 2)
+        eff_grid.addWidget(self.chk_phase_noise, 5, 0)
+        eff_grid.addWidget(self.le_phase_std[0], 5, 1); eff_grid.addWidget(self.le_phase_std[1], 5, 2)
+        eff_grid.addWidget(self.le_accel[0], 6, 0); eff_grid.addWidget(self.le_accel[1], 6, 1)
+        eff_grid.addWidget(self.le_vib_amp[0], 6, 2); eff_grid.addWidget(self.le_vib_amp[1], 6, 3)
+        eff_grid.addWidget(self.le_vib_freq[0], 7, 2); eff_grid.addWidget(self.le_vib_freq[1], 7, 3)
+        layout.addLayout(eff_grid)
+
+        # Случайные чекбоксы/поля тоже влияют на конфиг
+        for chk in (self.chk_complex_sigma, self.chk_anisotropy,
+                    self.chk_shadowing, self.chk_antenna, self.chk_phase_noise):
+            chk.stateChanged.connect(self._on_config_changed)
+
+    def _on_realism_preset(self, preset_name):
+        """Применить пресет реализма к чекбоксам и полям.
+
+        «Пользовательский» ничего не меняет (значения остаются как есть).
+        """
+        if preset_name == "Пользовательский":
+            self._on_config_changed()
+            return
+        from config import REALISM_PRESETS
+        preset = REALISM_PRESETS.get(preset_name, {})
+        if "use_complex_sigma" in preset:
+            self.chk_complex_sigma.setChecked(preset["use_complex_sigma"])
+        if "use_anisotropy" in preset:
+            self.chk_anisotropy.setChecked(preset["use_anisotropy"])
+        if "use_shadowing" in preset:
+            self.chk_shadowing.setChecked(preset["use_shadowing"])
+        if "use_antenna_pattern" in preset:
+            self.chk_antenna.setChecked(preset["use_antenna_pattern"])
+        if "use_phase_noise" in preset:
+            self.chk_phase_noise.setChecked(preset["use_phase_noise"])
+        if "accel" in preset:
+            self.le_accel[1].setText(str(preset["accel"]))
+        if "vib_amplitude_mm" in preset:
+            self.le_vib_amp[1].setText(str(preset["vib_amplitude_mm"]))
+        self._on_config_changed()
 
     # ---------- Кнопки ----------
 
@@ -567,6 +707,23 @@ class MainWindow(QMainWindow):
         except ValueError:
             return fallback
 
+    def _make_effects(self):
+        """Собрать SimEffects из текущей конфигурации GUI."""
+        from simulation.raw_generator import SimEffects
+        return SimEffects(
+            seed=int(self.cfg.seed) if self.cfg.seed else 42,
+            use_complex_sigma=self.cfg.use_complex_sigma,
+            use_anisotropy=self.cfg.use_anisotropy,
+            anisotropy_width_deg=self.cfg.anisotropy_width_deg,
+            use_shadowing=self.cfg.use_shadowing,
+            shadow_radius_m=self.cfg.shadow_radius_m,
+            use_antenna_pattern=self.cfg.use_antenna_pattern,
+            pointing_error_deg=self.cfg.pointing_error_deg,
+            antenna_drift_deg=self.cfg.antenna_drift_deg,
+            use_phase_noise=self.cfg.use_phase_noise,
+            phase_noise_std_deg=self.cfg.phase_noise_std_deg,
+        )
+
     def _on_config_changed(self):
         self.cfg.method = self.cb_method.currentText()
         self.cfg.satellite = self.cb_satellite.currentText()
@@ -590,6 +747,23 @@ class MainWindow(QMainWindow):
         self.cfg.window = self.cb_window.currentText()
         self.cfg.display_mode = self.cb_display.currentText()
         self.cfg.snr_db = self._safe_float(self.le_snr[1], self.cfg.snr_db)
+
+        # Реализм
+        self.cfg.realism_preset = self.cb_realism_preset.currentText()
+        self.cfg.use_complex_sigma = self.chk_complex_sigma.isChecked()
+        self.cfg.use_anisotropy = self.chk_anisotropy.isChecked()
+        self.cfg.anisotropy_width_deg = self._safe_float(self.le_aniso_width[1], self.cfg.anisotropy_width_deg)
+        self.cfg.use_shadowing = self.chk_shadowing.isChecked()
+        self.cfg.shadow_radius_m = self._safe_float(self.le_shadow_radius[1], self.cfg.shadow_radius_m)
+        self.cfg.use_antenna_pattern = self.chk_antenna.isChecked()
+        self.cfg.pointing_error_deg = self._safe_float(self.le_pointing[1], self.cfg.pointing_error_deg)
+        self.cfg.antenna_drift_deg = self._safe_float(self.le_drift[1], self.cfg.antenna_drift_deg)
+        self.cfg.use_phase_noise = self.chk_phase_noise.isChecked()
+        self.cfg.phase_noise_std_deg = self._safe_float(self.le_phase_std[1], self.cfg.phase_noise_std_deg)
+        self.cfg.accel = self._safe_float(self.le_accel[1], self.cfg.accel)
+        self.cfg.vib_amplitude_mm = self._safe_float(self.le_vib_amp[1], self.cfg.vib_amplitude_mm)
+        self.cfg.vib_frequency_hz = self._safe_float(self.le_vib_freq[1], self.cfg.vib_frequency_hz)
+        self.cfg.seed = int(self.cfg.seed) if self.cfg.seed else 42
 
         self.cfg.save()
 
@@ -664,6 +838,10 @@ class MainWindow(QMainWindow):
             window=self.cfg.window,
             display_mode=self.cfg.display_mode,
             snr_db=self.cfg.snr_db,
+            effects=self._make_effects(),
+            accel=self.cfg.accel,
+            vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
+            vib_frequency=self.cfg.vib_frequency_hz,
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -815,6 +993,10 @@ class MainWindow(QMainWindow):
             window=self.cfg.window,
             display_mode=self.cfg.display_mode,
             snr_db=self.cfg.snr_db,
+            effects=self._make_effects(),
+            accel=self.cfg.accel,
+            vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
+            vib_frequency=self.cfg.vib_frequency_hz,
             save_dir=save_dir,
             mode="stream",
         )
