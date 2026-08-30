@@ -8,7 +8,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 from models.radar import Radar
 from models.target import Target
-from simulation.raw_generator import generate_raw_matrix
+from simulation.raw_generator import generate_raw_matrix, SimEffects
 from processing.range_compress import range_compress
 from processing.mocomp import mocomp
 from processing.azimuth_compress import azimuth_compress, compute_amplitude
@@ -61,7 +61,8 @@ class DataProcessor(QThread):
     def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
                  nifft_size=1024, save_dir=None, mode="single",
                  V=0.0, alpha=0.0, omega=None, pri=1.0, num_pulses=NUM_IMAGES,
-                 use_mocomp=True, window="none", display_mode="dB", snr_db=float('inf')):
+                 use_mocomp=True, window="none", display_mode="dB", snr_db=float('inf'),
+                 effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -84,6 +85,12 @@ class DataProcessor(QThread):
         self.use_mocomp = use_mocomp
         self.window = window
         self.snr_db = snr_db
+        # Эффекты реализма: None или SimEffects (дефолты — все выключены)
+        self.effects = effects if effects is not None else SimEffects()
+        # Нелинейная кинематика цели
+        self.accel = accel
+        self.vib_amplitude = vib_amplitude
+        self.vib_frequency = vib_frequency
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -127,6 +134,9 @@ class DataProcessor(QThread):
             V=self.V,
             alpha=self.alpha,
             omega=self.omega,
+            accel=self.accel,
+            vib_amplitude=self.vib_amplitude,
+            vib_frequency=self.vib_frequency,
         )
 
     def generate_raw_data(self):
@@ -138,7 +148,7 @@ class DataProcessor(QThread):
             target: объект Target (для доступа к кинематике).
         """
         target = self._make_target()
-        E, f_r = generate_raw_matrix(self.radar, target)
+        E, f_r = generate_raw_matrix(self.radar, target, effects=self.effects)
         return E, f_r, target
 
     def compute_range_profiles(self):

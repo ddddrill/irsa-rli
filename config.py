@@ -7,6 +7,23 @@ from paths import app_dir
 CONFIG_PATH = os.path.join(app_dir(), "config.json")
 
 
+# Пресеты эффектов реализма для GUI.
+# «Идеальный» — все эффекты выключены (классическая точечная модель).
+# «Реалистичный» — рекомендуемый набор для демонстрации реальных условий.
+REALISM_PRESETS = {
+    "Идеальный": {
+        "use_complex_sigma": False, "use_anisotropy": False,
+        "use_shadowing": False, "use_antenna_pattern": False,
+        "use_phase_noise": False, "accel": 0.0, "vib_amplitude_mm": 0.0,
+    },
+    "Реалистичный": {
+        "use_complex_sigma": True, "use_anisotropy": True,
+        "use_shadowing": True, "use_antenna_pattern": True,
+        "use_phase_noise": True, "accel": 0.5, "vib_amplitude_mm": 2.0,
+    },
+}
+
+
 @dataclass
 class AppConfig:
     method: str = "стандартный"
@@ -31,6 +48,23 @@ class AppConfig:
     window: str = "none"                # оконная функция: none, hamming, hann
     display_mode: str = "dB"            # режим отображения: linear, dB
     snr_db: float = float('inf')        # SNR в дБ (inf = без шума)
+
+    # Эффекты реализма (все выключены = классическая модель)
+    realism_preset: str = "Идеальный"   # Идеальный / Реалистичный / Пользовательский
+    seed: int = 42                      # базовый seed генераторов случайности
+    use_complex_sigma: bool = False     # случайные фазы рассеивателей
+    use_anisotropy: bool = False        # угловая зависимость sigma_i(theta)
+    anisotropy_width_deg: float = 10.0  # ширина лепестка анизотропии, град
+    use_shadowing: bool = False         # геометрическое затенение
+    shadow_radius_m: float = 0.4        # радиус затенения, м
+    use_antenna_pattern: bool = False   # двухпутевая ДН антенны
+    pointing_error_deg: float = 0.0     # ошибка наведения, град
+    antenna_drift_deg: float = 0.0      # дрейф луча за апертуру, град
+    use_phase_noise: bool = False       # фазовый шум опорного генератора
+    phase_noise_std_deg: float = 10.0   # RMS фазового набега за апертуру, град
+    accel: float = 0.0                  # ускорение цели, м/с²
+    vib_amplitude_mm: float = 0.0       # амплитуда микровибрации, мм
+    vib_frequency_hz: float = 1.0       # частота микровибрации, Гц
 
     @property
     def range_m(self) -> float:
