@@ -5,7 +5,7 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 проект придерживается [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.4.0] — 2026-06-30
+## [2.4.0] — 2026-08-31
 
 ### Добавлено
 - **Физические эффекты реализма** в генератор сырых данных (`simulation/raw_generator.py`):
