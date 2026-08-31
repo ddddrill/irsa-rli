@@ -5,6 +5,33 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 проект придерживается [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] — 2026-06-30
+
+### Добавлено
+- **Физические эффекты реализма** в генератор сырых данных (`simulation/raw_generator.py`):
+  1. *Комплексные амплитуды рассеивателей* — случайные фазы `σᵢ·exp(jφᵢ)` из seeded RNG (`simulation/scatterer_effects.py:make_complex_amplitudes`).
+  2. *Анизотропия* — гауссова угловая зависимость `σᵢ(θₙ)` с случайными пиками по сектору съёмки (`make_scatterer_patterns`, `anisotropy_weights`).
+  3. *Затенение (occlusion)* — геометрическая окклюзия рассеивателей по дальности и поперечному смещению (`occlusion_mask`).
+  4. *Фазовый шум опорного генератора* — винеровский процесс с нормированным RMS (`simulation/system_effects.py:phase_noise_process`).
+  5. *Двухпутевая ДН антенны* — гауссова модель `G²(θ)` с ошибкой наведения и дрейфом (`two_way_antenna_weights`).
+- **Нелинейная кинематика цели** (`models/target.py`):
+  - Ускорение `a` вдоль направления `α` — квадратичная фазовая ошибка.
+  - Гармоническая микровибрация по дальности — микро-доплер.
+- `SimEffects` dataclass в `simulation/raw_generator.py` — все флаги по умолчанию выключены, полная обратная совместимость.
+- Модуль `simulation/rng.py` — централизованный seeded RNG с изоляцией под-генераторов (`spawn_rng`).
+- Секция **«Реализм»** в GUI (`ui/main_window.py`): пресеты «Идеальный» / «Реалистичный» / «Пользовательский», чекбоксы и поля ввода для каждого эффекта.
+- `REALISM_PRESETS` в `config.py` — рекомендуемые наборы параметров.
+- Демо-скрипт `examples/demo_realism_effects.py` — 6-панельное сравнение «до/после».
+- Набор тестов `tests/` (pytest):
+  - `test_backward_compat.py` — регрессия: effects-off ≡ классическая формула.
+  - `test_determinism.py` — воспроизводимость по seed.
+  - `test_effects_unit.py` — юнит-проверки каждого эффекта.
+  - `test_pipeline_integration.py` — полный конвейер (стандартный + полярный) со всеми эффектами.
+
+### Изменено
+- `processing/data_processor.py` — приём `realism`-kwargs (дефолты off), проброс в `Target` и `generate_raw_matrix`.
+- `requirements.txt` — добавлен `pytest`.
+
 ## [2.2.0] — 2026-06-17
 
 ### Исправлено
