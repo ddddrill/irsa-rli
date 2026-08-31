@@ -739,8 +739,8 @@ class MainWindow(QMainWindow):
         self.cfg.V = self._safe_float(self.le_V[1], self.cfg.V)
         self.cfg.alpha = self._safe_float(self.le_alpha[1], self.cfg.alpha)
         self.cfg.omega = self._safe_float(self.le_omega[1], self.cfg.omega)
-        self.cfg.pri = self._safe_float(self.le_pri[1], self.cfg.pri)
-        self.cfg.num_pulses = self._safe_int(self.le_num_pulses[1], self.cfg.num_pulses)
+        self.cfg.pri = max(self._safe_float(self.le_pri[1], self.cfg.pri), 1e-6)
+        self.cfg.num_pulses = max(self._safe_int(self.le_num_pulses[1], self.cfg.num_pulses), 1)
 
         # Обработка
         self.cfg.use_mocomp = self.chk_mocomp.isChecked()

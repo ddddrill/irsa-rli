@@ -271,6 +271,10 @@ class DataProcessor(QThread):
 
     def _compute_isar_standard(self, E, f_r, target, display_mode):
         """Стандартный конвейер: 1D range + 1D azimuth."""
+        if self.pri <= 0:
+            raise ValueError(
+                f"PRI = {self.pri} с должно быть > 0 для азимутального сжатия"
+            )
         # 2. Сжатие по дальности
         self.progress_message.emit("Сжатие по дальности...")
         P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)

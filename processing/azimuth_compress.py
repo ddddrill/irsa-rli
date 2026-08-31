@@ -55,6 +55,10 @@ def azimuth_compress(P_comp, omega, f_c, pri=1.0, window="none"):
     I = fftshift(fft(P_windowed, axis=1), axes=1)
 
     T_obs = N * pri
+    if T_obs <= 0.0:
+        raise ValueError(
+            f"Время наблюдения T_obs = N*pri = {N}*{pri} = {T_obs} должно быть > 0"
+        )
     df_doppler = 1.0 / T_obs
     doppler_axis = (np.arange(N) - N // 2) * df_doppler
 
