@@ -20,6 +20,7 @@ from paths import resource_path, app_dir
 from filenames import get_matrix_filename
 from processing import DataProcessor
 from ui.styles import APP_STYLE
+from ui.help_dialog import HelpDialog
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +230,42 @@ class MainWindow(QMainWindow):
         kin_grid.addWidget(self.le_num_pulses[0], 2, 0); kin_grid.addWidget(self.le_num_pulses[1], 2, 1)
         layout.addLayout(kin_grid)
 
+        # Модель цели + 3D-кинематика (Tier 2)
+        layout.addWidget(self._section_label("Модель цели"))
+        model_grid = QGridLayout()
+        model_grid.setSpacing(4)
+
+        model_lbl, self.cb_target_model = self._make_combo_widget(
+            "Модель", ["точечная", "формы (json)"],
+            getattr(self.cfg, "target_model", "точечная"),
+        )
+        self.cb_target_model.currentTextChanged.connect(self._on_config_changed)
+        model_grid.addWidget(model_lbl, 0, 0); model_grid.addWidget(self.cb_target_model, 0, 1)
+
+        self.le_omega_axis_y = self._make_input_widget(
+            "Ось ω (y)", self.cfg.omega_axis_y,
+            tooltip="Y-компонента оси вращения в СК цели (X=0 всегда).\n"
+                    "(0, 0, 1) = ось Z (по умолчанию); (0, 1, 0) = ось Y.",
+        )
+        self.le_omega_axis_z = self._make_input_widget(
+            "Ось ω (z)", self.cfg.omega_axis_z,
+            tooltip="Z-компонента оси вращения в СК цели.",
+        )
+        model_grid.addWidget(self.le_omega_axis_y[0], 0, 2); model_grid.addWidget(self.le_omega_axis_y[1], 0, 3)
+        model_grid.addWidget(self.le_omega_axis_z[0], 1, 2); model_grid.addWidget(self.le_omega_axis_z[1], 1, 3)
+
+        self.le_precession_rate = self._make_input_widget(
+            "Прецессия, рад/с", self.cfg.precession_rate,
+            tooltip="Частота прецессии оси вращения (рад/с). 0 = нет прецессии.",
+        )
+        self.le_precession_angle = self._make_input_widget(
+            "Прецессия, град", self.cfg.precession_angle_deg,
+            tooltip="Полуразворот конуса прецессии (град).",
+        )
+        model_grid.addWidget(self.le_precession_rate[0], 1, 0); model_grid.addWidget(self.le_precession_rate[1], 1, 1)
+        model_grid.addWidget(self.le_precession_angle[0], 2, 0); model_grid.addWidget(self.le_precession_angle[1], 2, 1)
+        layout.addLayout(model_grid)
+
         # Параметры обработки
         layout.addWidget(self._section_label("Обработка"))
         proc_layout = QHBoxLayout()
@@ -415,6 +452,9 @@ class MainWindow(QMainWindow):
         self.btn_stop = self._make_button("Остановить", self._stop_stream)
         self.btn_stop.setEnabled(False)
         layout.addWidget(self.btn_stop)
+
+        self.btn_help = self._make_button("Справка", self._show_help)
+        layout.addWidget(self.btn_help)
 
         layout.addSpacing(8)
 
@@ -691,6 +731,11 @@ class MainWindow(QMainWindow):
             btn.setObjectName(style_class)
         return btn
 
+    def _show_help(self):
+        """Открыть справочное окно."""
+        dlg = HelpDialog(self)
+        dlg.show()
+
     # ================================================================
     #  Конфигурация
     # ================================================================
@@ -741,6 +786,13 @@ class MainWindow(QMainWindow):
         self.cfg.omega = self._safe_float(self.le_omega[1], self.cfg.omega)
         self.cfg.pri = max(self._safe_float(self.le_pri[1], self.cfg.pri), 1e-6)
         self.cfg.num_pulses = max(self._safe_int(self.le_num_pulses[1], self.cfg.num_pulses), 1)
+
+        # Модель цели + 3D-кинематика (Tier 2)
+        self.cfg.target_model = self.cb_target_model.currentText()
+        self.cfg.omega_axis_y = self._safe_float(self.le_omega_axis_y[1], self.cfg.omega_axis_y)
+        self.cfg.omega_axis_z = self._safe_float(self.le_omega_axis_z[1], self.cfg.omega_axis_z)
+        self.cfg.precession_rate = self._safe_float(self.le_precession_rate[1], self.cfg.precession_rate)
+        self.cfg.precession_angle_deg = self._safe_float(self.le_precession_angle[1], self.cfg.precession_angle_deg)
 
         # Обработка
         self.cfg.use_mocomp = self.chk_mocomp.isChecked()
@@ -842,6 +894,12 @@ class MainWindow(QMainWindow):
             accel=self.cfg.accel,
             vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
             vib_frequency=self.cfg.vib_frequency_hz,
+            target_model=self.cfg.target_model,
+            satellite=self.cfg.satellite,
+            omega_axis_y=self.cfg.omega_axis_y,
+            omega_axis_z=self.cfg.omega_axis_z,
+            precession_rate=self.cfg.precession_rate,
+            precession_angle_deg=self.cfg.precession_angle_deg,
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -997,6 +1055,12 @@ class MainWindow(QMainWindow):
             accel=self.cfg.accel,
             vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
             vib_frequency=self.cfg.vib_frequency_hz,
+            target_model=self.cfg.target_model,
+            satellite=self.cfg.satellite,
+            omega_axis_y=self.cfg.omega_axis_y,
+            omega_axis_z=self.cfg.omega_axis_z,
+            precession_rate=self.cfg.precession_rate,
+            precession_angle_deg=self.cfg.precession_angle_deg,
             save_dir=save_dir,
             mode="stream",
         )
