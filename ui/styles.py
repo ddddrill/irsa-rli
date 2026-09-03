@@ -210,6 +210,7 @@ APP_STYLE = """
         border: 1px solid #dcdde1;
         border-radius: 6px;
         background-color: #ffffff;
+        margin-left: 2px;
     }
     QTabBar::tab {
         background-color: #ecf0f1;
@@ -219,6 +220,7 @@ APP_STYLE = """
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
         padding: 10px 20px;
+        margin-left: 2px;
         margin-right: 2px;
         font-size: 13px;
         font-weight: bold;
