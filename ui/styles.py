@@ -213,14 +213,14 @@ APP_STYLE = """
     }
     QTabBar::tab {
         background-color: #ecf0f1;
-        color: #7f8c8d;
+        color: #2c3e50;
         border: 1px solid #dcdde1;
         border-bottom: none;
         border-top-left-radius: 6px;
         border-top-right-radius: 6px;
-        padding: 8px 16px;
+        padding: 10px 20px;
         margin-right: 2px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: bold;
     }
     QTabBar::tab:selected {
