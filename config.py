@@ -36,6 +36,14 @@ class AppConfig:
     satellite: str = "solarB"
     range_km: float = 500.0             # дальность до объекта, км
 
+    # Модель цели и ось вращения (GUI передаёт в DataProcessor;
+    # 3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8)
+    target_model: str = "точечная"      # точечная / формы (json)
+    omega_axis_y: float = 0.0           # Y-компонента оси вращения (X=0)
+    omega_axis_z: float = 0.0           # Z-компонента оси вращения
+    precession_rate: float = 0.0        # частота прецессии оси, рад/с
+    precession_angle_deg: float = 0.0   # полуразворот конуса прецессии, град
+
     # Кинематика цели
     V: float = 0.0                      # скорость трансляции, м/с
     alpha: float = 0.0                  # угол направления движения, град

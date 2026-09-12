@@ -65,7 +65,9 @@ class DataProcessor(QThread):
                  V=0.0, alpha=0.0, omega=None, pri=1.0, num_pulses=NUM_IMAGES,
                  use_mocomp=True, window="none", window_param=None,
                  range_window="none", display_mode="dB", snr_db=float('inf'),
-                 effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0):
+                 effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0,
+                 target_model="точечная", omega_axis_y=0.0, omega_axis_z=0.0,
+                 precession_rate=0.0, precession_angle_deg=0.0, satellite=None):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -96,6 +98,14 @@ class DataProcessor(QThread):
         self.accel = accel
         self.vib_amplitude = vib_amplitude
         self.vib_frequency = vib_frequency
+        # Модель цели/ось вращения: принимаются от GUI, в 2D-конвейере не используются
+        # (3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8)
+        self.target_model = target_model
+        self.satellite = satellite
+        self.omega_axis_y = omega_axis_y
+        self.omega_axis_z = omega_axis_z
+        self.precession_rate = precession_rate
+        self.precession_angle_deg = precession_angle_deg
         if omega is not None and omega > 0:
             self.omega = omega
         else:
