@@ -38,6 +38,17 @@
 - Тесты `tests/test_psf.py` — битовая идентичность `"none"` (range/azimuth), параметризованные SLL (none/hann/hamming/kaiser/chebwin, допуск ≤ ожидание+3 дБ), уширение ГЛ hann ≤1.7× от boxcar, разрешение по Рэлею (boxcar различим, kaiser сливается), симметричный азимутальный PSF.
 - `PARAMETERS_GUIDE.md` — честная таблица компромисса взвешивания (§6.3.1) и параметры `window_param`/`range_window` (дефолт `"none"`, демо не меняются).
 
+### Задача R8a: угловое ускорение γ (маневрирующая цель)
+
+В целевую модель добавлено угловое ускорение вращения — **C&M, (1.13): `θ(t) = θ₀ + Ω·t + γ·t²/2`**. Дефолт `gamma=0.0` → поведение по умолчанию не меняется (побитовая совместимость проверена тестами).
+
+- `models/target.py` — параметр `gamma=0.0` (рад/с²) в `Target.__init__`; закон угла применён в `_absolute_positions` (`theta = omega*t_n + 0.5*gamma*t_n**2`) и `get_aspect_angles` (единый закон для анизотропии/затенения). В докстринге отмечено: при γ ≠ 0 полный фокус даёт только TF-конвейер (R5), «слепой» PFA расфокусируется (ожидаемо).
+- `processing/data_processor.py` — kwarg `gamma=0.0`, проброс в `Target` через `_make_target()`.
+- `config.py` — поле `gamma: float = 0.0` в блоке «Кинематика цели».
+- `ui/main_window.py` — числовое поле «Угл. ускорение, рад/с²» (`le_gamma`, рядом с `le_accel`), чтение в `_on_config_changed`, передача `gamma=self.cfg.gamma` в оба конструктора `DataProcessor`. Дефолт 0 — демо-пресеты не меняются (smoke offscreen).
+- `processing/polar_reformat.py` — `build_kspace_grid(f_r, omega, pri, num_pulses, theta_array=None)`: при явной передаче вектора углов (например `target.get_aspect_angles()`) используется нелинейная сетка вместо `omega*n*pri` (нужно R6); иначе поведение как раньше.
+- Тесты `tests/test_target_gamma.py` — битовая совместимость `gamma=0`, формула `θ = ω·t + 0.5·γ·t²` (в т.ч. через `_absolute_positions`/`slow_time`), полярный конвейер выживает при `gamma=1e-4` (энтропия конечна, оси в метрах, `np.isfinite`), нелинейная сетка `theta_array`.
+
 ## [2.4.0] — 2026-06-30
 
 ### Добавлено

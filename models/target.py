@@ -17,12 +17,16 @@ class Target:
       Все координаты точек (x_i, y_i) задаются относительно ЦМ цели.
 
     Медленное время: t_n = pulse_index * PRI
-    Угол поворота:  theta(t_n) = omega * t_n
+    Угол поворота:  theta(t_n) = omega * t_n + 0.5 * gamma * t_n**2     — C&M, (1.13)
     Координаты ЦМ:  X_cm(t_n) = R0 + Vx * t_n,  Y_cm(t_n) = Vy * t_n
+
+    При gamma != 0 (маневрирующая цель) полный фокус РЛИ даёт только
+    TF-конвейер (R5): чирп-член a2*t^2 в фазе размазывает RD-изображение,
+    «слепой» PFA расфокусируется (это ожидаемое поведение, см. C&M, §3.2).
     """
 
     def __init__(self, file, pri=1.0, num_pulses=NUM_IMAGES,
-                 R0=0.0, V=0.0, alpha=0.0, omega=0.0,
+                 R0=0.0, V=0.0, alpha=0.0, omega=0.0, gamma=0.0,
                  accel=0.0, vib_amplitude=0.0, vib_frequency=1.0):
         """
         Args:
@@ -33,6 +37,9 @@ class Target:
             V: модуль поступательной скорости (м/с).
             alpha: угол направления движения (град) относительно RLOS.
             omega: угловая скорость вращения вокруг ЦМ (рад/с).
+            gamma: угловое ускорение вращения (рад/с²).
+                   Угол поворота: theta(t) = omega*t + 0.5*gamma*t^2
+                   (C&M, (1.13)). При gamma=0 — равномерное вращение.
             accel: ускорение ЦМ вдоль направления alpha (м/с²).
                    Даёт квадратичную фазовую ошибку по медленному времени.
             vib_amplitude: амплитуда микровибрации ЦМ по дальности (м).
@@ -46,6 +53,7 @@ class Target:
         self.V = V
         self.alpha = alpha
         self.omega = omega
+        self.gamma = gamma
         self.accel = accel
         self.vib_amplitude = vib_amplitude
         self.vib_frequency = vib_frequency
@@ -130,13 +138,16 @@ class Target:
         return y_all
 
     def get_aspect_angles(self):
-        """Углы наблюдения рассеивателей (радиан) — theta_n = omega * t_n.
+        """Углы наблюдения рассеивателей (радиан) — C&M, (1.13).
 
-        Возвращает массив shape (num_pulses,). При omega=0 все углы нулевые.
-        Используется для модели анизотропии рассеивателей.
+        theta_n = omega * t_n + 0.5 * gamma * t_n^2,  t_n = n * PRI
+        Возвращает массив shape (num_pulses,). При omega=0 и gamma=0 все углы
+        нулевые. Используется для модели анизотропии рассеивателей; единый
+        закон угла согласует анизотропию/затенение с кинематикой вращения.
         """
         n = np.arange(self.num_pulses)
-        return self.omega * n * self.pri
+        t_n = n * self.pri
+        return self.omega * t_n + 0.5 * self.gamma * t_n ** 2
 
     def _absolute_positions(self, t_n, x0, y0):
         """Вычислить абсолютные координаты рассеивателей в момент t_n.
@@ -150,7 +161,7 @@ class Target:
             X_cm += A_vib * sin(2*pi*f_vib*t_n)
 
         Шаг 2.4: Вращательное движение вокруг ЦМ.
-            theta = omega * t_n
+            theta = omega * t_n + 0.5 * gamma * t_n^2        — C&M, (1.13)
             delta_x = x0 * cos(theta) - y0 * sin(theta)
             delta_y = x0 * sin(theta) + y0 * cos(theta)
 
@@ -174,7 +185,7 @@ class Target:
         if self.vib_amplitude != 0.0:
             X_cm += self.vib_amplitude * math.sin(2.0 * math.pi * self.vib_frequency * t_n)
 
-        theta = self.omega * t_n
+        theta = self.omega * t_n + 0.5 * self.gamma * t_n ** 2   # C&M, (1.13)
         cos_t = math.cos(theta)
         sin_t = math.sin(theta)
 

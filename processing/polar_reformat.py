@@ -175,7 +175,7 @@ def plot_kspace(Kx, Ky, E, ax=None, title=None, show_rectangle=True):
     return ax
 
 
-def build_kspace_grid(f_r, omega, pri, num_pulses):
+def build_kspace_grid(f_r, omega, pri, num_pulses, theta_array=None):
     """Полная сборка k-space: от сырых параметров к полярной сетке.
 
     Объединяет Шаги 2.2-2.4 в один вызов.
@@ -185,6 +185,10 @@ def build_kspace_grid(f_r, omega, pri, num_pulses):
         omega: угловая скорость (рад/с).
         pri: период повторения импульсов (с).
         num_pulses: число импульсов N.
+        theta_array: опциональный явный вектор углов shape (N,).
+            Если передан, используется вместо линейной сетки omega*n*pri
+            (например при angular_acceleration: target.get_aspect_angles()).
+            Иначе сетка линейна как раньше (обратная совместимость).
 
     Returns:
         dict с ключами:
@@ -197,7 +201,11 @@ def build_kspace_grid(f_r, omega, pri, num_pulses):
             bounds: dict с границами сектора
     """
     k, k_min, k_max = compute_wavenumber_axis(f_r)
-    theta, delta_theta = compute_angle_axis(omega, pri, num_pulses)
+    if theta_array is None:
+        theta, delta_theta = compute_angle_axis(omega, pri, num_pulses)
+    else:
+        theta = np.asarray(theta_array, dtype=float)
+        delta_theta = theta[-1] - theta[0]
     Kx, Ky = polar_to_cartesian(k, theta)
     bounds = get_kspace_bounds(k, theta)
 

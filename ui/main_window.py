@@ -386,6 +386,12 @@ class MainWindow(QMainWindow):
             tooltip="Ускорение цели вдоль направления движения.\n"
                     "Даёт квадратичную фазовую ошибку — классический кейс для автофокуса.",
         )
+        self.le_gamma = self._make_input_widget(
+            "Угл. ускорение, рад/с²", self.cfg.gamma,
+            tooltip="Угловое ускорение вращения, рад/с²; 0 = равномерное.\n"
+                    "Маневрирующая цель: theta = omega*t + 0.5*gamma*t^2 (C&M, (1.13)).\n"
+                    "При gamma≠0 «слепой» PFA расфокусируется — ожидаемо.",
+        )
         self.le_vib_amp = self._make_input_widget(
             "Микровибрация, мм", self.cfg.vib_amplitude_mm,
             tooltip="Амплитуда гармонической микровибрации по дальности (мм).\n"
@@ -407,6 +413,7 @@ class MainWindow(QMainWindow):
         eff_grid.addWidget(self.chk_phase_noise, 5, 0)
         eff_grid.addWidget(self.le_phase_std[0], 5, 1); eff_grid.addWidget(self.le_phase_std[1], 5, 2)
         eff_grid.addWidget(self.le_accel[0], 6, 0); eff_grid.addWidget(self.le_accel[1], 6, 1)
+        eff_grid.addWidget(self.le_gamma[0], 7, 0); eff_grid.addWidget(self.le_gamma[1], 7, 1)
         eff_grid.addWidget(self.le_vib_amp[0], 6, 2); eff_grid.addWidget(self.le_vib_amp[1], 6, 3)
         eff_grid.addWidget(self.le_vib_freq[0], 7, 2); eff_grid.addWidget(self.le_vib_freq[1], 7, 3)
         layout.addLayout(eff_grid)
@@ -823,6 +830,7 @@ class MainWindow(QMainWindow):
         self.cfg.use_phase_noise = self.chk_phase_noise.isChecked()
         self.cfg.phase_noise_std_deg = self._safe_float(self.le_phase_std[1], self.cfg.phase_noise_std_deg)
         self.cfg.accel = self._safe_float(self.le_accel[1], self.cfg.accel)
+        self.cfg.gamma = self._safe_float(self.le_gamma[1], self.cfg.gamma)
         self.cfg.vib_amplitude_mm = self._safe_float(self.le_vib_amp[1], self.cfg.vib_amplitude_mm)
         self.cfg.vib_frequency_hz = self._safe_float(self.le_vib_freq[1], self.cfg.vib_frequency_hz)
         self.cfg.seed = int(self.cfg.seed) if self.cfg.seed else 42
@@ -904,6 +912,7 @@ class MainWindow(QMainWindow):
             snr_db=self.cfg.snr_db,
             effects=self._make_effects(),
             accel=self.cfg.accel,
+            gamma=self.cfg.gamma,
             vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
             vib_frequency=self.cfg.vib_frequency_hz,
             target_model=self.cfg.target_model,
@@ -1067,6 +1076,7 @@ class MainWindow(QMainWindow):
             snr_db=self.cfg.snr_db,
             effects=self._make_effects(),
             accel=self.cfg.accel,
+            gamma=self.cfg.gamma,
             vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
             vib_frequency=self.cfg.vib_frequency_hz,
             target_model=self.cfg.target_model,

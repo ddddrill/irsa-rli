@@ -66,6 +66,7 @@ class DataProcessor(QThread):
                  use_mocomp=True, window="none", window_param=None,
                  range_window="none", display_mode="dB", snr_db=float('inf'),
                  effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0,
+                 gamma=0.0,
                  target_model="точечная", omega_axis_y=0.0, omega_axis_z=0.0,
                  precession_rate=0.0, precession_angle_deg=0.0, satellite=None):
         super().__init__()
@@ -98,6 +99,8 @@ class DataProcessor(QThread):
         self.accel = accel
         self.vib_amplitude = vib_amplitude
         self.vib_frequency = vib_frequency
+        # Угловое ускорение вращения цели (C&M, (1.13)): theta = omega*t + 0.5*gamma*t^2
+        self.gamma = gamma
         # Модель цели/ось вращения: принимаются от GUI, в 2D-конвейере не используются
         # (3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8)
         self.target_model = target_model
@@ -149,6 +152,7 @@ class DataProcessor(QThread):
             V=self.V,
             alpha=self.alpha,
             omega=self.omega,
+            gamma=self.gamma,
             accel=self.accel,
             vib_amplitude=self.vib_amplitude,
             vib_frequency=self.vib_frequency,
