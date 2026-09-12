@@ -5,6 +5,16 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/),
 проект придерживается [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Baseline (ревизия `07a63dc`, перед задачами R2–R8)
+
+Зафиксировано до внесения изменений плана исправлений (см. «План_исправлений_IRSA_R2-R8.md», §10.3). С этими значениями сравниваются регрессионные проверки каждой задачи.
+
+- `pytest tests/ -q`: **15 passed** (13 warnings: matplotlib/pyparsing deprecation).
+- `examples/test_data_processor_polar`: **ALL CHECKS PASSED**; энтропия Standard = 16.26 бит, Polar = 13.48 бит; энергия в топ-1% пикселей = 93.3% (порог > 30%).
+- `examples/demo_full_pipeline_mocomp` (V=50 м/с, α=0.30): до MOCOMP энтропия 6.82, пик 1948, drift 11 бинов; после MOCOMP энтропия 6.77, пик 3897, drift −9 бинов; улучшение пика ×2.0.
+
 ## [2.4.0] — 2026-06-30
 
 ### Добавлено
