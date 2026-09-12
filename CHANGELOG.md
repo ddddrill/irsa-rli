@@ -15,6 +15,15 @@
 - `examples/test_data_processor_polar`: **ALL CHECKS PASSED**; энтропия Standard = 16.26 бит, Polar = 13.48 бит; энергия в топ-1% пикселей = 93.3% (порог > 30%).
 - `examples/demo_full_pipeline_mocomp` (V=50 м/с, α=0.30): до MOCOMP энтропия 6.82, пик 1948, drift 11 бинов; после MOCOMP энтропия 6.77, пик 3897, drift −9 бинов; улучшение пика ×2.0.
 
+### Задача R4: физический порог полярного конвейера
+
+Порог переключения на полярное переформатирование теперь вычисляется из физического критерия применимости малой угловой аппроксимации **C&M, §3.1: Δθ_max ≈ √(λ/L_LOS)/2** (QPE кромкового рассеивателя ≤ π/16), а не равен эмпирической константе 3°.
+
+- `processing/polar_reformat.py` — новая чистая функция `polar_threshold_deg(wavelength, target_size_los)`; `should_use_polar_reformat` расширена до кортежа из 5 элементов `(use_polar, Δθ_рад, Δθ_град, threshold_used_deg, threshold_source)` с правилом выбора порога: явный `threshold_deg` → `"legacy"`; `threshold_deg=None` c `wavelength`+`target_size_los` → `"physical"`; без данных → фолбэк 3° (`"legacy"`). Старый позиционный вызов с `threshold_deg` сохраняет поведение (обратная совместимость).
+- `processing/polar_reformat.py` — `smart_pipeline` принимает `wavelength`/`target_size_los`, возвращает `threshold_used_deg`/`threshold_source` (+`physical_threshold_deg` при наличии данных) и логирует оба порога (физический и legacy 3°).
+- `processing/data_processor.py` — `compute_isar_notified()` при выбранном стандартном методе и `Δθ > √(λ/L_LOS)/2` (λ = c/f_c, L_LOS ≈ `self.Xmax`) эмитит в `progress_message` только диагностическое предупреждение (формат `WARN: Δθ = … > физический порог … (C&M §3.1) — рекомендуется метод с полярным переформатированием (legacy-порог 3.00°)`). Поведение конвейера не меняется.
+- Тесты `tests/test_polar_threshold.py` — опорные значения порога (X-band/L=20 м → 1.24°), «серая зона» меняет решение, фолбэк legacy, позиционная совместимость, некорректные входы, воспроизводимость GUI-предупреждения на пресете ω = 2°/16 импульсов.
+
 ## [2.4.0] — 2026-06-30
 
 ### Добавлено

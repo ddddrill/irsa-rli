@@ -13,8 +13,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import RegularGridInterpolator
 import math
+import logging
 
 SPEED_OF_LIGHT = 3e8
+# Унаследованный эмпирический порог Оздемира; используется как фолбэк
+# при отсутствии данных для физического критерия (C&M, §3.1).
+LEGACY_THRESHOLD_DEG = 3.0
+
+logger = logging.getLogger(__name__)
 
 
 def compute_wavenumber_axis(f_r):
@@ -791,7 +797,31 @@ def plot_three_way_comparison(amp_naive, extent_naive,
 # ── Этап 7: Интеграция, метрики и автоматическое переключение ──────────────
 
 
-def should_use_polar_reformat(omega, pri, num_pulses, threshold_deg=3.0):
+def polar_threshold_deg(wavelength, target_size_los):
+    """Физический критерий применимости малой угловой аппроксимации.
+
+    C&M, §3.1: Δθ_max ≈ √(λ/L_LOS)/2.
+    Вывод: квадратичная фазовая ошибка кромкового рассеивателя
+    QPE = (2π/λ)·(L/2)·Δθ²/4 <= π/16  (λ/16 волнового фронта).
+
+    Args:
+        wavelength: длина волны (м).
+        target_size_los: проекция размера цели на LOS, L_LOS (м).
+
+    Returns:
+        Порог в градусах. При некорректных входах (None, ≤0) — None.
+    """
+    if wavelength is None or target_size_los is None:
+        return None
+    if wavelength <= 0 or target_size_los <= 0:
+        return None
+    return math.degrees(math.sqrt(wavelength / target_size_los) / 2.0)
+
+
+def should_use_polar_reformat(omega, pri, num_pulses,
+                              threshold_deg=None,          # None = авто
+                              wavelength=None,             # для авто-порога
+                              target_size_los=None):
     """Шаг 7.2: Автоматическое определение необходимости полярной переформатизации.
 
     Физический смысл:
@@ -799,23 +829,51 @@ def should_use_polar_reformat(omega, pri, num_pulses, threshold_deg=3.0):
         работает хорошо и полярная переформатизация не нужна.
         При больших углах — обязательна.
 
+        Порог по умолчанию берётся из физического критерия C&M, §3.1:
+        Δθ_max ≈ √(λ/L_LOS)/2. Если данных для него нет — фолбэк на
+        унаследованный эмпирический порог 3°.
+
     Args:
         omega: угловая скорость (рад/с).
         pri: период повторения импульсов (с).
         num_pulses: число импульсов.
-        threshold_deg: порог в градусах (по умолчанию 3°).
+        threshold_deg: явный порог в градусах. None — авто (физический,
+            при наличии wavelength+target_size_los, иначе фолбэк 3°).
+        wavelength: длина волны (м), для авто-порога.
+        target_size_los: проекция размера цели на LOS L_LOS (м), для авто-порога.
 
     Returns:
         use_polar: True если нужна полярная переформатизация.
         delta_theta_rad: суммарный угол в радианах.
         delta_theta_deg: суммарный угол в градусах.
+        threshold_used_deg: применённый порог (градусы).
+        threshold_source: "physical" | "legacy".
     """
     T_obs = num_pulses * pri
     delta_theta_rad = omega * T_obs
     delta_theta_deg = math.degrees(delta_theta_rad)
-    threshold_rad = math.radians(threshold_deg)
+
+    if threshold_deg is not None:
+        threshold_used_deg = float(threshold_deg)
+        threshold_source = "legacy"
+    else:
+        physical = polar_threshold_deg(wavelength, target_size_los)
+        if physical is not None:
+            threshold_used_deg = physical
+            threshold_source = "physical"
+        else:
+            threshold_used_deg = LEGACY_THRESHOLD_DEG
+            threshold_source = "legacy"
+            logger.warning(
+                "should_use_polar_reformat: нет данных для физического порога "
+                "(wavelength/target_size_los), фолбэк на legacy-порог %.1f°",
+                LEGACY_THRESHOLD_DEG,
+            )
+
+    threshold_rad = math.radians(threshold_used_deg)
     use_polar = delta_theta_rad >= threshold_rad
-    return use_polar, delta_theta_rad, delta_theta_deg
+    return (use_polar, delta_theta_rad, delta_theta_deg,
+            threshold_used_deg, threshold_source)
 
 
 def compute_image_entropy(I_complex):
@@ -868,7 +926,7 @@ def compute_isnr(I_focused, I_blurred):
 
 def smart_pipeline(E, f_r, radar, target, omega, pri, num_pulses,
                    threshold_deg=3.0, Xmax_scene=50.0, Ymax_scene=50.0,
-                   use_mocomp=True):
+                   use_mocomp=True, wavelength=None, target_size_los=None):
     """Шаг 7.2: Умный конвейер — автоматическое переключение режимов.
 
     Если Delta_theta >= threshold: полярная переформатизация + 2D IFFT.
@@ -882,23 +940,48 @@ def smart_pipeline(E, f_r, radar, target, omega, pri, num_pulses,
         omega: угловая скорость (рад/с).
         pri: период повторения импульсов (с).
         num_pulses: число импульсов.
-        threshold_deg: порог для переключения (градусы).
+        threshold_deg: порог для переключения (градусы). None — авто:
+            физический порог (C&M, §3.1), при наличии wavelength и
+            target_size_los, иначе фолбэк 3°.
         Xmax_scene: размер сцены по дальности (м).
         Ymax_scene: размер сцены по азимуту (м).
+        wavelength: длина волны (м), для авто-порога.
+        target_size_los: проекция размера цели на LOS L_LOS (м), для авто-порога.
 
     Returns:
-        dict с результатами и флагом используемого метода.
+        dict с результатами и флагом используемого метода. Дополнительно:
+            threshold_used_deg: применённый порог (градусы).
+            threshold_source: "physical" | "legacy".
+            physical_threshold_deg: физический порог C&M, §3.1 (если вычислим).
     """
-    use_polar, delta_theta_rad, delta_theta_deg = should_use_polar_reformat(
-        omega, pri, num_pulses, threshold_deg
+    use_polar, delta_theta_rad, delta_theta_deg, \
+        threshold_used_deg, threshold_source = should_use_polar_reformat(
+            omega, pri, num_pulses, threshold_deg,
+            wavelength=wavelength, target_size_los=target_size_los,
+        )
+
+    physical_threshold_deg = polar_threshold_deg(wavelength, target_size_los)
+    logger.info(
+        "smart_pipeline: Δθ=%.2f° | физический порог (C&M, §3.1)=%s° | "
+        "legacy-порог=%.2f° | применённый порог=%.2f° (source=%s)",
+        delta_theta_deg,
+        f"{physical_threshold_deg:.2f}" if physical_threshold_deg is not None
+        else "n/a",
+        LEGACY_THRESHOLD_DEG,
+        threshold_used_deg,
+        threshold_source,
     )
 
     result = {
         "use_polar": use_polar,
         "delta_theta_rad": delta_theta_rad,
         "delta_theta_deg": delta_theta_deg,
+        "threshold_used_deg": threshold_used_deg,
+        "threshold_source": threshold_source,
         "method": "polar_reformat" if use_polar else "standard_1d",
     }
+    if physical_threshold_deg is not None:
+        result["physical_threshold_deg"] = physical_threshold_deg
 
     if use_polar:
         # Новый конвейер: полярная переформатизация + 2D IFFT

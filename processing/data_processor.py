@@ -22,6 +22,8 @@ from processing.polar_reformat import (
     compute_amplitude_db,
     compute_image_entropy,
     should_use_polar_reformat,
+    polar_threshold_deg,
+    LEGACY_THRESHOLD_DEG,
 )
 
 logger = logging.getLogger(__name__)
@@ -266,8 +268,24 @@ class DataProcessor(QThread):
 
         if self.method == "с полярным переформатированием":
             return self._compute_isar_polar(E, f_r, target, display_mode)
-        else:
-            return self._compute_isar_standard(E, f_r, target, display_mode)
+
+        # Диагностика: физический порог применимости малой угловой аппроксимации
+        # C&M, §3.1: Δθ_max ≈ √(λ/L_LOS)/2 с λ = c/f_c и L_LOS ≈ self.Xmax.
+        # Только предупреждение — метод по-прежнему выбирает пользователь.
+        wavelength = SPEED_OF_LIGHT / self.f_c
+        delta_theta_deg = math.degrees(
+            self.omega * self.num_pulses * self.pri
+        )
+        physical_threshold_deg = polar_threshold_deg(wavelength, self.Xmax)
+        if (physical_threshold_deg is not None
+                and delta_theta_deg > physical_threshold_deg):
+            self.progress_message.emit(
+                f"WARN: Δθ = {delta_theta_deg:.2f}° > физический порог "
+                f"{physical_threshold_deg:.2f}° (C&M §3.1) — рекомендуется метод "
+                f"с полярным переформатированием "
+                f"(legacy-порог {LEGACY_THRESHOLD_DEG:.2f}°)"
+            )
+        return self._compute_isar_standard(E, f_r, target, display_mode)
 
     def _compute_isar_standard(self, E, f_r, target, display_mode):
         """Стандартный конвейер: 1D range + 1D azimuth."""
