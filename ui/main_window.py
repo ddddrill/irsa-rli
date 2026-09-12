@@ -19,6 +19,7 @@ from config import AppConfig
 from paths import resource_path, app_dir
 from filenames import get_matrix_filename
 from processing import DataProcessor
+from processing.windows import WINDOW_NAMES
 from ui.styles import APP_STYLE
 from ui.help_dialog import HelpDialog
 
@@ -277,13 +278,21 @@ class MainWindow(QMainWindow):
         proc_layout.addWidget(self.chk_mocomp)
 
         win_lbl, self.cb_window = self._make_combo_widget(
-            "Окно", ["none", "hamming", "hann"], self.cfg.window,
+            "Окно (азимут)", WINDOW_NAMES, self.cfg.window,
+        )
+        winp_lbl, self.le_window_param = self._make_input_widget(
+            "Параметр окна (β/at)",
+            self.cfg.window_param if self.cfg.window_param is not None else "",
+            tooltip="β для kaiser (дефолт 8.0) или at в дБ для chebwin "
+                    "(дефолт 60); остальные окна игнорируют",
         )
         disp_lbl, self.cb_display = self._make_combo_widget(
             "Отображение", ["linear", "dB"], self.cfg.display_mode,
         )
         proc_layout.addWidget(win_lbl)
         proc_layout.addWidget(self.cb_window)
+        proc_layout.addWidget(winp_lbl)
+        proc_layout.addWidget(self.le_window_param)
         proc_layout.addWidget(disp_lbl)
         proc_layout.addWidget(self.cb_display)
         proc_layout.addStretch()
@@ -797,6 +806,7 @@ class MainWindow(QMainWindow):
         # Обработка
         self.cfg.use_mocomp = self.chk_mocomp.isChecked()
         self.cfg.window = self.cb_window.currentText()
+        self.cfg.window_param = self._safe_float(self.le_window_param, self.cfg.window_param)
         self.cfg.display_mode = self.cb_display.currentText()
         self.cfg.snr_db = self._safe_float(self.le_snr[1], self.cfg.snr_db)
 
@@ -888,6 +898,8 @@ class MainWindow(QMainWindow):
             num_pulses=self.cfg.num_pulses,
             use_mocomp=self.cfg.use_mocomp,
             window=self.cfg.window,
+            window_param=self.cfg.window_param,
+            range_window=self.cfg.range_window,
             display_mode=self.cfg.display_mode,
             snr_db=self.cfg.snr_db,
             effects=self._make_effects(),
@@ -1049,6 +1061,8 @@ class MainWindow(QMainWindow):
             num_pulses=self.cfg.num_pulses,
             use_mocomp=self.cfg.use_mocomp,
             window=self.cfg.window,
+            window_param=self.cfg.window_param,
+            range_window=self.cfg.range_window,
             display_mode=self.cfg.display_mode,
             snr_db=self.cfg.snr_db,
             effects=self._make_effects(),

@@ -24,6 +24,20 @@
 - `processing/data_processor.py` — `compute_isar_notified()` при выбранном стандартном методе и `Δθ > √(λ/L_LOS)/2` (λ = c/f_c, L_LOS ≈ `self.Xmax`) эмитит в `progress_message` только диагностическое предупреждение (формат `WARN: Δθ = … > физический порог … (C&M §3.1) — рекомендуется метод с полярным переформатированием (legacy-порог 3.00°)`). Поведение конвейера не меняется.
 - Тесты `tests/test_polar_threshold.py` — опорные значения порога (X-band/L=20 м → 1.24°), «серая зона» меняет решение, фолбэк legacy, позиционная совместимость, некорректные входы, воспроизводимость GUI-предупреждения на пресете ω = 2°/16 импульсов.
 
+### Задача R7: взвешивание по дальности и PSF-тесты разрешения
+
+Дальностное сжатие получило опциональное взвешивание спектра, азимутальный набор окон расширен до kaiser/chebwin/taylor; добавлены автогесты PSF (ширина главного лепестка и боковые лепестки) — C&M, §6.3.1 (взвешивание), §3.3 (окно перед IFFT/FFT).
+
+- `processing/windows.py` (новое) — единый словарь `WINDOW_NAMES`/`WINDOW_FUNCTIONS` и хелпер `get_weighting(name, N, param=None)` с нормировкой `win/win.mean()` (восстановление когерентного усиления). Для `"none"` (boxcar) нормировка не применяется — битовая идентичность старому коду. `chebwin` при N<4 вырождается → boxcar (guard). `taylor` переиспользует `taylor_window_1d` полярного конвейера (импорт ленивый, без цикла).
+- `processing/range_compress.py` — новая сигнатура `range_compress(E, f_r, R0=0.0, window="none", window_param=None)`: окно применяется к столбцам E (axis=0) ДО IFFT. Дефолт `"none"` → побитово прежний результат.
+- `processing/azimuth_compress.py` — `window_param` в сигнатуре; взвешивание через общий `get_weighting` (нормировка vs старая ненормированная hamming/hann — амплитуда пиков оконных изображений теперь сопоставима между окнами).
+- `processing/psf_metrics.py` (новое) — `psf_metrics(profile_db, main_lobe_halfwidth_bins) → (width_−3dB_bins, max_sll_db)` для переиспользования в R2/R3/R6.
+- `processing/data_processor.py` — новые поля конфига проброшены во все вызовы: `range_window` в 8 вызовов `range_compress`, `window_param` в 3 вызова `azimuth_compress` и в `range_compress`.
+- `config.py` — поля `window_param` (None) и `range_window` ("none").
+- `ui/main_window.py` — комбобокс окон расширен до `WINDOW_NAMES` (kaiser/chebwin/taylor), добавлено поле «Параметр окна (β/at)».
+- Тесты `tests/test_psf.py` — битовая идентичность `"none"` (range/azimuth), параметризованные SLL (none/hann/hamming/kaiser/chebwin, допуск ≤ ожидание+3 дБ), уширение ГЛ hann ≤1.7× от boxcar, разрешение по Рэлею (boxcar различим, kaiser сливается), симметричный азимутальный PSF.
+- `PARAMETERS_GUIDE.md` — честная таблица компромисса взвешивания (§6.3.1) и параметры `window_param`/`range_window` (дефолт `"none"`, демо не меняются).
+
 ## [2.4.0] — 2026-06-30
 
 ### Добавлено

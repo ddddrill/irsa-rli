@@ -63,7 +63,8 @@ class DataProcessor(QThread):
     def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
                  nifft_size=1024, save_dir=None, mode="single",
                  V=0.0, alpha=0.0, omega=None, pri=1.0, num_pulses=NUM_IMAGES,
-                 use_mocomp=True, window="none", display_mode="dB", snr_db=float('inf'),
+                 use_mocomp=True, window="none", window_param=None,
+                 range_window="none", display_mode="dB", snr_db=float('inf'),
                  effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0):
         super().__init__()
         self.filename = filename
@@ -86,6 +87,8 @@ class DataProcessor(QThread):
         self.num_pulses = num_pulses
         self.use_mocomp = use_mocomp
         self.window = window
+        self.window_param = window_param
+        self.range_window = range_window
         self.snr_db = snr_db
         # Эффекты реализма: None или SimEffects (дефолты — все выключены)
         self.effects = effects if effects is not None else SimEffects()
@@ -165,7 +168,8 @@ class DataProcessor(QThread):
             target: объект Target.
         """
         E, f_r, target = self.generate_raw_data()
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         return P, P_abs, range_axis, dr, f_r, target
 
     def compute_mocomp(self):
@@ -182,7 +186,8 @@ class DataProcessor(QThread):
             target: объект Target.
         """
         E, f_r, target = self.generate_raw_data()
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         P_comp, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
         return P_comp, range_axis, dr, shifts, ref_bin, phase_errors, f_r, target
 
@@ -207,7 +212,8 @@ class DataProcessor(QThread):
         if self.method == "с полярным переформатированием":
             return self._compute_isar_polar_sync(E, f_r, target)
 
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
 
         if use_mocomp:
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
@@ -216,13 +222,15 @@ class DataProcessor(QThread):
 
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=window,
+            window_param=self.window_param,
         )
         amplitude = compute_amplitude(I, mode="linear")
         return I, amplitude, range_axis, azimuth_axis, target
 
     def _compute_isar_polar_sync(self, E, f_r, target):
         """Синхронный конвейер с полярным переформатированием (без эмиссии сигналов)."""
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         if self.use_mocomp:
             P, _, _, _ = mocomp(P, range_axis)
             E_comp = np.fft.fft(np.fft.ifftshift(P, axes=0), axis=0)
@@ -295,7 +303,8 @@ class DataProcessor(QThread):
             )
         # 2. Сжатие по дальности
         self.progress_message.emit("Сжатие по дальности...")
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         self.range_profiles_ready.emit(P_abs, range_axis, dr)
 
         # 3. Компенсация движения (опционально)
@@ -315,6 +324,7 @@ class DataProcessor(QThread):
         self.progress_message.emit("Азимутальное сжатие...")
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,
+            window_param=self.window_param,
         )
         amplitude = compute_amplitude(I, mode=display_mode)
         self.isar_ready.emit(amplitude, range_axis, azimuth_axis)
@@ -353,7 +363,8 @@ class DataProcessor(QThread):
 
         # 2. Сжатие по дальности (нужно для MOCOMP)
         self.progress_message.emit("Сжатие по дальности...")
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         self.range_profiles_ready.emit(P_abs, range_axis, dr)
 
         # 3. Компенсация движения (опционально)
@@ -483,7 +494,8 @@ class DataProcessor(QThread):
 
     def _standard_frame(self, E_partial, f_r):
         """Обработать один кадр стандартным методом (1D + 1D)."""
-        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
 
         if self.use_mocomp:
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
@@ -492,13 +504,15 @@ class DataProcessor(QThread):
 
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,
+            window_param=self.window_param,
         )
         return compute_amplitude(I, mode=self.display_mode)
 
     def _polar_frame(self, E_partial, f_r, k_full, theta_partial, grid_full):
         """Обработать один кадр полярным методом (k-space → Cartesian → 2D IFFT)."""
         # 1. Сжатие по дальности + MOCOMP
-        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         if self.use_mocomp:
             P_comp, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
             E_comp = np.fft.fft(np.fft.ifftshift(P_comp, axes=0), axis=0)
