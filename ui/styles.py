@@ -206,33 +206,6 @@ APP_STYLE = """
         height: 0;
     }
 
-    QTabWidget::pane {
-        border: 1px solid #dcdde1;
-        border-radius: 6px;
-        background-color: #ffffff;
-    }
-    QTabBar::tab {
-        background-color: #ecf0f1;
-        color: #7f8c8d;
-        border: 1px solid #dcdde1;
-        border-bottom: none;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
-        padding: 8px 16px;
-        margin-right: 2px;
-        font-size: 12px;
-        font-weight: bold;
-    }
-    QTabBar::tab:selected {
-        background-color: #ffffff;
-        color: #3498db;
-        border-bottom: 2px solid #3498db;
-    }
-    QTabBar::tab:hover:!selected {
-        background-color: #ebf5fb;
-        color: #2c3e50;
-    }
-
     QLabel#section_label {
         font-size: 12px;
         font-weight: bold;

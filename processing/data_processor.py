@@ -22,6 +22,8 @@ from processing.polar_reformat import (
     compute_amplitude_db,
     compute_image_entropy,
     should_use_polar_reformat,
+    polar_threshold_deg,
+    LEGACY_THRESHOLD_DEG,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ class DataProcessor(QThread):
     mocomp_before_after = pyqtSignal(object, object, object)
     isar_ready = pyqtSignal(object, object, object)
     signal_data_ready = pyqtSignal(object, object)
+    tf_ready = pyqtSignal(object)  # dict RID-куба и сигнатур (вкладка «Сигнатуры»)
 
     # Логирование в GUI
     progress_message = pyqtSignal(str)
@@ -61,8 +64,16 @@ class DataProcessor(QThread):
     def __init__(self, filename, method, f_c, Xmax, Ymax, spectr_w, ang, range_m,
                  nifft_size=1024, save_dir=None, mode="single",
                  V=0.0, alpha=0.0, omega=None, pri=1.0, num_pulses=NUM_IMAGES,
-                 use_mocomp=True, window="none", display_mode="dB", snr_db=float('inf'),
-                 effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0):
+                 use_mocomp=True, window="none", window_param=None,
+                 range_window="none", display_mode="dB", snr_db=float('inf'),
+                 effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0,
+                 gamma=0.0,
+                 target_model="точечная", omega_axis_y=0.0, omega_axis_z=0.0,
+                 precession_rate=0.0, precession_angle_deg=0.0,
+                 tf_enabled=False, tf_n_frames=16, tf_window="hann",
+                 cross_range_scaling="off",
+                 use_keystone=False,
+                 satellite=None):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -84,6 +95,8 @@ class DataProcessor(QThread):
         self.num_pulses = num_pulses
         self.use_mocomp = use_mocomp
         self.window = window
+        self.window_param = window_param
+        self.range_window = range_window
         self.snr_db = snr_db
         # Эффекты реализма: None или SimEffects (дефолты — все выключены)
         self.effects = effects if effects is not None else SimEffects()
@@ -91,6 +104,24 @@ class DataProcessor(QThread):
         self.accel = accel
         self.vib_amplitude = vib_amplitude
         self.vib_frequency = vib_frequency
+        # Угловое ускорение вращения цели (C&M, (1.13)): theta = omega*t + 0.5*gamma*t^2
+        self.gamma = gamma
+        # Модель цели/ось вращения: принимаются от GUI, в 2D-конвейере не используются
+        # (3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8)
+        self.target_model = target_model
+        self.satellite = satellite
+        self.omega_axis_y = omega_axis_y
+        self.omega_axis_z = omega_axis_z
+        self.precession_rate = precession_rate
+        self.precession_angle_deg = precession_angle_deg
+        # TF-анализ (вкладка «Сигнатуры»): выключен → битовая совместимость
+        self.tf_enabled = tf_enabled
+        self.tf_n_frames = tf_n_frames
+        self.tf_window = tf_window
+        # R3 кросс-масштабирование по данным: "off" (дефолт, как раньше) / "auto"
+        self.cross_range_scaling = cross_range_scaling
+        # R6 keystone-перешкалирование: False (дефолт) = битовая идентичность
+        self.use_keystone = use_keystone
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -134,6 +165,7 @@ class DataProcessor(QThread):
             V=self.V,
             alpha=self.alpha,
             omega=self.omega,
+            gamma=self.gamma,
             accel=self.accel,
             vib_amplitude=self.vib_amplitude,
             vib_frequency=self.vib_frequency,
@@ -163,7 +195,8 @@ class DataProcessor(QThread):
             target: объект Target.
         """
         E, f_r, target = self.generate_raw_data()
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         return P, P_abs, range_axis, dr, f_r, target
 
     def compute_mocomp(self):
@@ -180,7 +213,8 @@ class DataProcessor(QThread):
             target: объект Target.
         """
         E, f_r, target = self.generate_raw_data()
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         P_comp, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
         return P_comp, range_axis, dr, shifts, ref_bin, phase_errors, f_r, target
 
@@ -205,7 +239,8 @@ class DataProcessor(QThread):
         if self.method == "с полярным переформатированием":
             return self._compute_isar_polar_sync(E, f_r, target)
 
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
 
         if use_mocomp:
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
@@ -214,13 +249,15 @@ class DataProcessor(QThread):
 
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=window,
+            window_param=self.window_param,
         )
         amplitude = compute_amplitude(I, mode="linear")
         return I, amplitude, range_axis, azimuth_axis, target
 
     def _compute_isar_polar_sync(self, E, f_r, target):
         """Синхронный конвейер с полярным переформатированием (без эмиссии сигналов)."""
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         if self.use_mocomp:
             P, _, _, _ = mocomp(P, range_axis)
             E_comp = np.fft.fft(np.fft.ifftshift(P, axes=0), axis=0)
@@ -266,8 +303,68 @@ class DataProcessor(QThread):
 
         if self.method == "с полярным переформатированием":
             return self._compute_isar_polar(E, f_r, target, display_mode)
-        else:
-            return self._compute_isar_standard(E, f_r, target, display_mode)
+
+        # Диагностика: физический порог применимости малой угловой аппроксимации
+        # C&M, §3.1: Δθ_max ≈ √(λ/L_LOS)/2 с λ = c/f_c и L_LOS ≈ self.Xmax.
+        # Только предупреждение — метод по-прежнему выбирает пользователь.
+        wavelength = SPEED_OF_LIGHT / self.f_c
+        delta_theta_deg = math.degrees(
+            self.omega * self.num_pulses * self.pri
+        )
+        physical_threshold_deg = polar_threshold_deg(wavelength, self.Xmax)
+        if (physical_threshold_deg is not None
+                and delta_theta_deg > physical_threshold_deg):
+            self.progress_message.emit(
+                f"WARN: Δθ = {delta_theta_deg:.2f}° > физический порог "
+                f"{physical_threshold_deg:.2f}° (C&M §3.1) — рекомендуется метод "
+                f"с полярным переформатированием "
+                f"(legacy-порог {LEGACY_THRESHOLD_DEG:.2f}°)"
+            )
+        return self._compute_isar_standard(E, f_r, target, display_mode)
+
+    def azimuth_compress(self, P_proc, window="none"):
+        """Помощник: спектральное сжатие по азимуту + шкалирование осей.
+
+        Returns:
+            I: комплексное изображение M×N.
+            azimuth_axis: ось азимута (м).
+            doppler_axis: доплеровская ось (Гц), использованная для
+                формирования изображения.
+        """
+        I, azimuth_axis, doppler_axis = azimuth_compress(
+            P_proc, self.omega, self.f_c, pri=self.pri, window=window,
+            window_param=self.window_param,
+        )
+        return I, azimuth_axis, doppler_axis
+
+    def _maybe_cross_range_scale(self, I, range_axis, doppler_axis, azimuth_axis_cfg):
+        """R3: кросс-масштабирование по данным (chirp-rate) при auto.
+
+        Метод "phasefit" выбран как основной для разрежённых сцен после
+        автофокусировки: устойчив к низкому С/Ш строк и к смещению
+        опорного рассеивателя (перехватывается точкой пересечения b).
+        При fallback возвращается конфигурационная ось азимута.
+        """
+        from processing.cross_range_scaling import cross_range_scale
+
+        self.progress_message.emit("Кросс-масштабирование по данным (chirp-rate)...")
+        fs = 1.0 / self.pri
+        cr = cross_range_scale(
+            I, range_axis, doppler_axis, self.f_c, fs, method="phasefit",
+        )
+        if cr["fallback"]:
+            self.progress_message.emit(
+                "Кросс-масштабирование: оценка недостоверна, "
+                f"N = {cr['n_used']} точек [fallback → cfg-ось]"
+            )
+            return azimuth_axis_cfg
+        omega_eff = cr["omega_eff"]
+        self.progress_message.emit(
+            f"Кросс-масштабирование: Ω̂ = {omega_eff:.5f} рад/с "
+            f"(истинное ω = {self.omega:.5f}), R² = {cr['r2']:.2f}, "
+            f"N = {cr['n_used']} точек"
+        )
+        return cr["azimuth_axis_m"]
 
     def _compute_isar_standard(self, E, f_r, target, display_mode):
         """Стандартный конвейер: 1D range + 1D azimuth."""
@@ -277,7 +374,8 @@ class DataProcessor(QThread):
             )
         # 2. Сжатие по дальности
         self.progress_message.emit("Сжатие по дальности...")
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         self.range_profiles_ready.emit(P_abs, range_axis, dr)
 
         # 3. Компенсация движения (опционально)
@@ -293,11 +391,77 @@ class DataProcessor(QThread):
             self.mocomp_phase_ready.emit(np.zeros(self.num_pulses))
             self.mocomp_before_after.emit(P_abs, P_abs, range_axis)
 
+        # 3a. Keystone-коррекция вращательной миграции ячеек (R6, C&M §5.5):
+        #     только по флагу (дефолт off = ни одной строки пути не меняется).
+        #     Гибрид §9.4 п.2: после MOCOMP возврат в E-область
+        #     (E = fft(ifftshift(P))), keystone-перешкалирование медленного
+        #     времени t_ks = (f_c/f_r)·t, повторное сжатие дальности
+        #     (двойное сжатие — приемлемо, флаг выключен по умолчанию).
+        if self.use_keystone:
+            from processing.keystone import keystone_transform
+            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
+            E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
+            E_ks = keystone_transform(E_comp, f_r, self.f_c)
+            # E_comp уже дерамплен MOCOMP-блоком: повторный дерамп R0 = 0.0
+            # (без повторной опорной дальности) — иначе двойной дерамп
+            # смещает пики (ревью R6-integration: +9.1 м вместо +5.2 м).
+            P_proc = range_compress(E_ks, f_r, R0=0.0,
+                                    window=self.range_window,
+                                    window_param=self.window_param)[0]
+
+        # 3b. TF-анализ (вкладка «Сигнатуры»): RID-куб и спектрограммы топ-K
+        #     бинов — только по включённому флагу (дефолт off = без изменений).
+        #     P_proc уже выровнен MOCOMP-блоком; сигнал эмитится один раз.
+        if self.tf_enabled:
+            from processing.tf_analysis import (
+                micro_doppler_signature,
+                rid_cube,
+                strongest_range_bins,
+                total_echo_signature,
+            )
+            self.progress_message.emit("TF-анализ: STFT…")
+            fs = 1.0 / self.pri
+            top_k = strongest_range_bins(P_proc, k=5)
+            rid = rid_cube(P_proc, fs=fs, n_frames=self.tf_n_frames,
+                           window=self.tf_window)
+            signatures = {}
+            for b in top_k:
+                f_b, t_b, s_db = micro_doppler_signature(
+                    P_proc, b, fs=fs, window=self.tf_window)
+                signatures[str(int(b))] = {"f": f_b, "t": t_b, "S_db": s_db}
+            total_echo = total_echo_signature(P_proc, fs=fs,
+                                              window=self.tf_window)
+            rows = {str(int(b)): np.asarray(P_proc[b]) for b in top_k}
+            self.tf_ready.emit({
+                "Q_mag": rid["Q_mag"],
+                "f": rid["f"],
+                "t": rid["t"],
+                "frame_idx": rid["frame_idx"],
+                "approximate": rid["approximate"],
+                "meta": rid["meta"],
+                "top_bins": [int(b) for b in top_k],
+                "signatures": signatures,
+                "total_echo": total_echo,
+                "rows": rows,
+                "fs": fs,
+                "n_frames": self.tf_n_frames,
+            })
+            self.progress_message.emit(
+                f"TF-анализ: RID-куб {rid['Q_mag'].shape} готов"
+            )
+
         # 4. Азимутальное сжатие
         self.progress_message.emit("Азимутальное сжатие...")
-        I, azimuth_axis, _ = azimuth_compress(
+        I, azimuth_axis, doppler_axis = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,
+            window_param=self.window_param,
         )
+        # 4b. Кросс-масштабирование по данным (R3): только при "auto",
+        #     off = битовая совместимость с прежним конвейером.
+        if self.cross_range_scaling == "auto":
+            azimuth_axis = self._maybe_cross_range_scale(
+                I, range_axis, doppler_axis, azimuth_axis,
+            )
         amplitude = compute_amplitude(I, mode=display_mode)
         self.isar_ready.emit(amplitude, range_axis, azimuth_axis)
 
@@ -335,7 +499,8 @@ class DataProcessor(QThread):
 
         # 2. Сжатие по дальности (нужно для MOCOMP)
         self.progress_message.emit("Сжатие по дальности...")
-        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         self.range_profiles_ready.emit(P_abs, range_axis, dr)
 
         # 3. Компенсация движения (опционально)
@@ -465,22 +630,40 @@ class DataProcessor(QThread):
 
     def _standard_frame(self, E_partial, f_r):
         """Обработать один кадр стандартным методом (1D + 1D)."""
-        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
 
         if self.use_mocomp:
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
         else:
             P_proc = P.astype(np.complex128)
 
+        # Keystone-коррекция (R6, C&M §5.5): режим потока кадров, тот же
+        # гибрид MOCOMP → E = fft(ifftshift(P)) → keystone → range_compress.
+        # Дефолт off — путь кадра не меняется.
+        if self.use_keystone:
+            from processing.keystone import keystone_transform
+            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
+            E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
+            E_ks = keystone_transform(E_comp, f_r, self.f_c)
+            # E_comp уже дерамплен MOCOMP-блоком: повторный дерамп R0 = 0.0
+            # (без повторной опорной дальности) — иначе двойной дерамп
+            # смещает пики (ревью R6-integration: +9.1 м вместо +5.2 м).
+            P_proc = range_compress(E_ks, f_r, R0=0.0,
+                                    window=self.range_window,
+                                    window_param=self.window_param)[0]
+
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,
+            window_param=self.window_param,
         )
         return compute_amplitude(I, mode=self.display_mode)
 
     def _polar_frame(self, E_partial, f_r, k_full, theta_partial, grid_full):
         """Обработать один кадр полярным методом (k-space → Cartesian → 2D IFFT)."""
         # 1. Сжатие по дальности + MOCOMP
-        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m)
+        P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m, window=self.range_window,
+                           window_param=self.window_param)
         if self.use_mocomp:
             P_comp, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
             E_comp = np.fft.fft(np.fft.ifftshift(P_comp, axes=0), axis=0)

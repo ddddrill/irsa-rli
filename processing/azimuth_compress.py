@@ -1,34 +1,22 @@
 import numpy as np
 from scipy.fft import fft, fftshift
 
+from processing.windows import get_weighting, WINDOW_FUNCTIONS
+
 SPEED_OF_LIGHT = 3e8
 
 
-def _hamming_window(N):
-    return 0.54 - 0.46 * np.cos(2.0 * np.pi * np.arange(N) / (N - 1))
-
-
-def _hann_window(N):
-    return 0.5 * (1.0 - np.cos(2.0 * np.pi * np.arange(N) / (N - 1)))
-
-
-def _boxcar_window(N):
-    return np.ones(N)
-
-
-WINDOW_FUNCTIONS = {
-    "hamming": _hamming_window,
-    "hann": _hann_window,
-    "none": _boxcar_window,
-    None: _boxcar_window,
-}
-
-
-def azimuth_compress(P_comp, omega, f_c, pri=1.0, window="none"):
+def azimuth_compress(P_comp, omega, f_c, pri=1.0, window="none",
+                     window_param=None):
     """Азимутальное сжатие: 1D FFT по оси медленного времени.
 
     Раздел 6 книги Оздемира. Переход из временной области (импульсы)
     в частотную (доплер/азимут).
+
+    Взвешивание применяется к строкам P_comp (axis=1) ДО финального FFT —
+    C&M, §3.3; нормировка win/win.mean() восстанавливает когерентное
+    усиление (C&M, §6.3.1). window="none" — битовая идентичность версии
+    без взвешивания.
 
     Алгоритм:
         1. (Опционально) Взвешивание оконной функцией по оси axis=1.
@@ -40,7 +28,10 @@ def azimuth_compress(P_comp, omega, f_c, pri=1.0, window="none"):
         omega: угловая скорость вращения цели (рад/с).
         f_c: центральная частота радара (Гц).
         pri: период повторения импульсов (с).
-        window: тип оконной функции ("hamming", "hann", "none").
+        window: тип оконной функции ("hamming", "hann", "none", "kaiser",
+            "chebwin", "taylor").
+        window_param: beta для kaiser (по умолч. 8.0) или at-дБ для chebwin
+            (по умолч. 60.0); для taylor — dict(nbar=4, sll=-35.0).
 
     Returns:
         I: комплексная матрица изображения M×N (ось 0 = дальность, ось 1 = азимут).
@@ -49,8 +40,8 @@ def azimuth_compress(P_comp, omega, f_c, pri=1.0, window="none"):
     """
     M, N = P_comp.shape
 
-    win = WINDOW_FUNCTIONS.get(window, _boxcar_window)(N)
-    P_windowed = P_comp * win[np.newaxis, :]
+    win = get_weighting(window, N, window_param)[np.newaxis, :]
+    P_windowed = P_comp * win
 
     I = fftshift(fft(P_windowed, axis=1), axes=1)
 

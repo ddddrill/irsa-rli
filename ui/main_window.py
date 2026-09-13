@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QSplitter, QScrollArea, QWidget,
     QTabWidget, QCheckBox, QGridLayout, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView,
+    QSlider,
 )
 from PyQt5.QtCore import Qt, QTimer, QRectF, QThread
 from PyQt5.QtGui import QPixmap
@@ -19,7 +20,10 @@ from config import AppConfig
 from paths import resource_path, app_dir
 from filenames import get_matrix_filename
 from processing import DataProcessor
+from processing.windows import WINDOW_NAMES
+from processing.tf_analysis import rid_frame, rid_marginal, wigner_ville
 from ui.styles import APP_STYLE
+from ui.help_dialog import HelpDialog
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +233,42 @@ class MainWindow(QMainWindow):
         kin_grid.addWidget(self.le_num_pulses[0], 2, 0); kin_grid.addWidget(self.le_num_pulses[1], 2, 1)
         layout.addLayout(kin_grid)
 
+        # Модель цели + 3D-кинематика (Tier 2)
+        layout.addWidget(self._section_label("Модель цели"))
+        model_grid = QGridLayout()
+        model_grid.setSpacing(4)
+
+        model_lbl, self.cb_target_model = self._make_combo_widget(
+            "Модель", ["точечная", "формы (json)"],
+            getattr(self.cfg, "target_model", "точечная"),
+        )
+        self.cb_target_model.currentTextChanged.connect(self._on_config_changed)
+        model_grid.addWidget(model_lbl, 0, 0); model_grid.addWidget(self.cb_target_model, 0, 1)
+
+        self.le_omega_axis_y = self._make_input_widget(
+            "Ось ω (y)", self.cfg.omega_axis_y,
+            tooltip="Y-компонента оси вращения в СК цели (X=0 всегда).\n"
+                    "(0, 0, 1) = ось Z (по умолчанию); (0, 1, 0) = ось Y.",
+        )
+        self.le_omega_axis_z = self._make_input_widget(
+            "Ось ω (z)", self.cfg.omega_axis_z,
+            tooltip="Z-компонента оси вращения в СК цели.",
+        )
+        model_grid.addWidget(self.le_omega_axis_y[0], 0, 2); model_grid.addWidget(self.le_omega_axis_y[1], 0, 3)
+        model_grid.addWidget(self.le_omega_axis_z[0], 1, 2); model_grid.addWidget(self.le_omega_axis_z[1], 1, 3)
+
+        self.le_precession_rate = self._make_input_widget(
+            "Прецессия, рад/с", self.cfg.precession_rate,
+            tooltip="Частота прецессии оси вращения (рад/с). 0 = нет прецессии.",
+        )
+        self.le_precession_angle = self._make_input_widget(
+            "Прецессия, град", self.cfg.precession_angle_deg,
+            tooltip="Полуразворот конуса прецессии (град).",
+        )
+        model_grid.addWidget(self.le_precession_rate[0], 1, 0); model_grid.addWidget(self.le_precession_rate[1], 1, 1)
+        model_grid.addWidget(self.le_precession_angle[0], 2, 0); model_grid.addWidget(self.le_precession_angle[1], 2, 1)
+        layout.addLayout(model_grid)
+
         # Параметры обработки
         layout.addWidget(self._section_label("Обработка"))
         proc_layout = QHBoxLayout()
@@ -240,13 +280,21 @@ class MainWindow(QMainWindow):
         proc_layout.addWidget(self.chk_mocomp)
 
         win_lbl, self.cb_window = self._make_combo_widget(
-            "Окно", ["none", "hamming", "hann"], self.cfg.window,
+            "Окно (азимут)", WINDOW_NAMES, self.cfg.window,
+        )
+        winp_lbl, self.le_window_param = self._make_input_widget(
+            "Параметр окна (β/at)",
+            self.cfg.window_param if self.cfg.window_param is not None else "",
+            tooltip="β для kaiser (дефолт 8.0) или at в дБ для chebwin "
+                    "(дефолт 60); остальные окна игнорируют",
         )
         disp_lbl, self.cb_display = self._make_combo_widget(
             "Отображение", ["linear", "dB"], self.cfg.display_mode,
         )
         proc_layout.addWidget(win_lbl)
         proc_layout.addWidget(self.cb_window)
+        proc_layout.addWidget(winp_lbl)
+        proc_layout.addWidget(self.le_window_param)
         proc_layout.addWidget(disp_lbl)
         proc_layout.addWidget(self.cb_display)
         proc_layout.addStretch()
@@ -340,6 +388,12 @@ class MainWindow(QMainWindow):
             tooltip="Ускорение цели вдоль направления движения.\n"
                     "Даёт квадратичную фазовую ошибку — классический кейс для автофокуса.",
         )
+        self.le_gamma = self._make_input_widget(
+            "Угл. ускорение, рад/с²", self.cfg.gamma,
+            tooltip="Угловое ускорение вращения, рад/с²; 0 = равномерное.\n"
+                    "Маневрирующая цель: theta = omega*t + 0.5*gamma*t^2 (C&M, (1.13)).\n"
+                    "При gamma≠0 «слепой» PFA расфокусируется — ожидаемо.",
+        )
         self.le_vib_amp = self._make_input_widget(
             "Микровибрация, мм", self.cfg.vib_amplitude_mm,
             tooltip="Амплитуда гармонической микровибрации по дальности (мм).\n"
@@ -361,6 +415,7 @@ class MainWindow(QMainWindow):
         eff_grid.addWidget(self.chk_phase_noise, 5, 0)
         eff_grid.addWidget(self.le_phase_std[0], 5, 1); eff_grid.addWidget(self.le_phase_std[1], 5, 2)
         eff_grid.addWidget(self.le_accel[0], 6, 0); eff_grid.addWidget(self.le_accel[1], 6, 1)
+        eff_grid.addWidget(self.le_gamma[0], 7, 0); eff_grid.addWidget(self.le_gamma[1], 7, 1)
         eff_grid.addWidget(self.le_vib_amp[0], 6, 2); eff_grid.addWidget(self.le_vib_amp[1], 6, 3)
         eff_grid.addWidget(self.le_vib_freq[0], 7, 2); eff_grid.addWidget(self.le_vib_freq[1], 7, 3)
         layout.addLayout(eff_grid)
@@ -416,6 +471,9 @@ class MainWindow(QMainWindow):
         self.btn_stop.setEnabled(False)
         layout.addWidget(self.btn_stop)
 
+        self.btn_help = self._make_button("Справка", self._show_help)
+        layout.addWidget(self.btn_help)
+
         layout.addSpacing(8)
 
         self.progress_bar = QProgressBar()
@@ -448,7 +506,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_mocomp_tab(), "Компенсация движения")
         # Вкладка 3: РЛИ
         self.tabs.addTab(self._build_isar_tab(), "РЛИ")
-        # Вкладка 4: Поток кадров
+        # Вкладка 4: Сигнатуры (TF-анализ: STFT/WVD/RID)
+        self.tabs.addTab(self._build_tf_tab(), "Сигнатуры")
+        # Вкладка 5: Поток кадров
         self.tabs.addTab(self._build_stream_tab(), "Поток кадров")
 
         return self.tabs
@@ -639,6 +699,88 @@ class MainWindow(QMainWindow):
         self.pg_isar.getPlotItem().getViewBox().addItem(self.isar_img)
 
         layout.addWidget(self.pg_isar)
+
+        # R3: кросс-масштабирование по данным (chirp-rate)
+        self.chk_cross_scale = QCheckBox("Кросс-масштабирование по данным (chirp-rate)")
+        self.chk_cross_scale.setChecked(self.cfg.cross_range_scaling == "auto")
+        self.chk_cross_scale.setToolTip(
+            "Оценка эффективной угловой скорости Omega_eff по линейному тренду "
+            "чирпа вдоль кросс-дальности; ось азимута перемасштабируется в метры. "
+            "Off = прежний конвейер (битовая совместимость)."
+        )
+        self.chk_cross_scale.stateChanged.connect(self._on_config_changed)
+        layout.addWidget(self.chk_cross_scale)
+
+        return widget
+
+    def _build_tf_tab(self):
+        """Вкладка «Сигнатуры»: TF-анализ (STFT/WVD) и RID-куб (§7.6)."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(8)
+
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        left.addWidget(self._section_label("Сигнатуры (TF-анализ)"))
+
+        bin_lbl = QLabel("Дальний бин")
+        bin_lbl.setObjectName("status_info")
+        self.tf_bin_combo = QComboBox()
+        self.tf_bin_combo.addItem("Суммарное эхо")
+        self.tf_bin_combo.currentIndexChanged.connect(self._on_tf_bin_changed)
+        left.addWidget(bin_lbl)
+        left.addWidget(self.tf_bin_combo)
+
+        tr_lbl = QLabel("Преобразование")
+        tr_lbl.setObjectName("status_info")
+        self.tf_transform_combo = QComboBox()
+        self.tf_transform_combo.addItems(["STFT", "WVD"])
+        self.tf_transform_combo.currentIndexChanged.connect(self._on_tf_transform_changed)
+        left.addWidget(tr_lbl)
+        left.addWidget(self.tf_transform_combo)
+
+        self.tf_marginal_check = QCheckBox("Маргинальная сумма (≈ Фурье)")
+        self.tf_marginal_check.setToolTip(
+            "I(r, f) = Σ_t Q(r, f, t) — маргинал RID-куба (TF, (5.18)); "
+            "при hop=1 совпадает с азимутальным Фурье-изображением."
+        )
+        self.tf_marginal_check.stateChanged.connect(self._redraw_tf)
+        left.addWidget(self.tf_marginal_check)
+
+        slider_row = QHBoxLayout()
+        slider_row.setSpacing(6)
+        slider_row.addWidget(QLabel("Кадр t"))
+        self.tf_frame_slider = QSlider(Qt.Horizontal)
+        self.tf_frame_slider.setRange(0, 0)
+        self.tf_frame_slider.setEnabled(False)
+        self.tf_frame_slider.setToolTip("Кадр времени RID-куба Q(r, f, t)")
+        self.tf_frame_slider.valueChanged.connect(self._redraw_tf)
+        self.tf_frame_label = QLabel("—")
+        self.tf_frame_label.setObjectName("status_info")
+        slider_row.addWidget(self.tf_frame_slider, stretch=1)
+        slider_row.addWidget(self.tf_frame_label)
+        left.addLayout(slider_row)
+
+        self.tf_status_label = QLabel(
+            "Нет данных. Включите tf_enabled в config для TF-анализа."
+        )
+        self.tf_status_label.setObjectName("status_info")
+        self.tf_status_label.setWordWrap(True)
+        left.addWidget(self.tf_status_label)
+        left.addStretch()
+
+        right = QVBoxLayout()
+        self.pg_tf = pg.PlotWidget(background="#fafafa")
+        self.pg_tf.setLabel("left", "Доплер, Гц")
+        self.pg_tf.setLabel("bottom", "Время, с")
+        self.pg_tf.setTitle("Сигнатуры (STFT)")
+        self.tf_img = pg.ImageItem()
+        self.pg_tf.getPlotItem().getViewBox().addItem(self.tf_img)
+        right.addWidget(self.pg_tf, stretch=1)
+
+        layout.addLayout(left, stretch=1)
+        layout.addLayout(right, stretch=3)
         return widget
 
     def _build_stream_tab(self):
@@ -691,6 +833,11 @@ class MainWindow(QMainWindow):
             btn.setObjectName(style_class)
         return btn
 
+    def _show_help(self):
+        """Открыть справочное окно."""
+        dlg = HelpDialog(self)
+        dlg.show()
+
     # ================================================================
     #  Конфигурация
     # ================================================================
@@ -742,11 +889,22 @@ class MainWindow(QMainWindow):
         self.cfg.pri = max(self._safe_float(self.le_pri[1], self.cfg.pri), 1e-6)
         self.cfg.num_pulses = max(self._safe_int(self.le_num_pulses[1], self.cfg.num_pulses), 1)
 
+        # Модель цели + 3D-кинематика (Tier 2)
+        self.cfg.target_model = self.cb_target_model.currentText()
+        self.cfg.omega_axis_y = self._safe_float(self.le_omega_axis_y[1], self.cfg.omega_axis_y)
+        self.cfg.omega_axis_z = self._safe_float(self.le_omega_axis_z[1], self.cfg.omega_axis_z)
+        self.cfg.precession_rate = self._safe_float(self.le_precession_rate[1], self.cfg.precession_rate)
+        self.cfg.precession_angle_deg = self._safe_float(self.le_precession_angle[1], self.cfg.precession_angle_deg)
+
         # Обработка
         self.cfg.use_mocomp = self.chk_mocomp.isChecked()
         self.cfg.window = self.cb_window.currentText()
+        self.cfg.window_param = self._safe_float(self.le_window_param, self.cfg.window_param)
         self.cfg.display_mode = self.cb_display.currentText()
         self.cfg.snr_db = self._safe_float(self.le_snr[1], self.cfg.snr_db)
+
+        # R3: кросс-масштабирование по данным (chirp-rate)
+        self.cfg.cross_range_scaling = "auto" if self.chk_cross_scale.isChecked() else "off"
 
         # Реализм
         self.cfg.realism_preset = self.cb_realism_preset.currentText()
@@ -761,6 +919,7 @@ class MainWindow(QMainWindow):
         self.cfg.use_phase_noise = self.chk_phase_noise.isChecked()
         self.cfg.phase_noise_std_deg = self._safe_float(self.le_phase_std[1], self.cfg.phase_noise_std_deg)
         self.cfg.accel = self._safe_float(self.le_accel[1], self.cfg.accel)
+        self.cfg.gamma = self._safe_float(self.le_gamma[1], self.cfg.gamma)
         self.cfg.vib_amplitude_mm = self._safe_float(self.le_vib_amp[1], self.cfg.vib_amplitude_mm)
         self.cfg.vib_frequency_hz = self._safe_float(self.le_vib_freq[1], self.cfg.vib_frequency_hz)
         self.cfg.seed = int(self.cfg.seed) if self.cfg.seed else 42
@@ -836,12 +995,25 @@ class MainWindow(QMainWindow):
             num_pulses=self.cfg.num_pulses,
             use_mocomp=self.cfg.use_mocomp,
             window=self.cfg.window,
+            window_param=self.cfg.window_param,
+            range_window=self.cfg.range_window,
             display_mode=self.cfg.display_mode,
             snr_db=self.cfg.snr_db,
             effects=self._make_effects(),
             accel=self.cfg.accel,
+            gamma=self.cfg.gamma,
             vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
             vib_frequency=self.cfg.vib_frequency_hz,
+            target_model=self.cfg.target_model,
+            satellite=self.cfg.satellite,
+            omega_axis_y=self.cfg.omega_axis_y,
+            omega_axis_z=self.cfg.omega_axis_z,
+            precession_rate=self.cfg.precession_rate,
+            precession_angle_deg=self.cfg.precession_angle_deg,
+            tf_enabled=self.cfg.tf_enabled,
+            tf_n_frames=self.cfg.tf_n_frames,
+            tf_window=self.cfg.tf_window,
+            cross_range_scaling=self.cfg.cross_range_scaling,
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -851,6 +1023,7 @@ class MainWindow(QMainWindow):
         self.processor.mocomp_before_after.connect(self._on_mocomp_before_after)
         self.processor.isar_ready.connect(self._on_isar_ready)
         self.processor.signal_data_ready.connect(self._on_signal_data)
+        self.processor.tf_ready.connect(self._on_tf_ready)
         self.processor.progress_message.connect(self._on_progress_message)
         self.processor.error_occurred.connect(self._on_error)
 
@@ -941,6 +1114,148 @@ class MainWindow(QMainWindow):
         self.info_label.style().polish(self.info_label)
         self.info_label.setText(msg)
 
+    # ================================================================
+    #  Вкладка «Сигнатуры»: tf_ready и отрисовка TF/RID (§7.6)
+    # ================================================================
+
+    def _on_tf_ready(self, data):
+        """Новые данные TF-анализа: наполнить селекторы и перерисовать."""
+        self._tf_data = data
+        self._tf_wvd_cache = {}
+        top = data.get("top_bins", [])
+        self.tf_bin_combo.blockSignals(True)
+        self.tf_bin_combo.clear()
+        self.tf_bin_combo.addItem("Суммарное эхо")
+        for b in top:
+            self.tf_bin_combo.addItem(f"Бин {b}")
+        self.tf_bin_combo.blockSignals(False)
+
+        n_frames = int(len(data.get("frame_idx", [])))
+        self.tf_frame_slider.blockSignals(True)
+        self.tf_frame_slider.setRange(0, max(0, n_frames - 1))
+        self.tf_frame_slider.setValue(0)
+        self.tf_frame_slider.blockSignals(False)
+
+        meta = data.get("meta", {})
+        approx = "да" if data.get("approximate") else "нет"
+        self.tf_status_label.setText(
+            f"RID-куб {tuple(data['Q_mag'].shape)} | кадров {n_frames} | "
+            f"nperseg {meta.get('nperseg', '?')} | hop {meta.get('hop', '?')} | "
+            f"approximate: {approx}"
+        )
+        self._redraw_tf()
+
+    def _on_tf_bin_changed(self, *_):
+        if hasattr(self, "_tf_data") and self._tf_data is not None:
+            self.tf_frame_slider.setValue(0)
+            self._redraw_tf()
+
+    def _on_tf_transform_changed(self, *_):
+        # WVD для суммарного эха не рассчитываем — подставляем топ-бин (§7.6)
+        if self.tf_transform_combo.currentText() == "WVD":
+            data = getattr(self, "_tf_data", None)
+            if data is not None and self.tf_bin_combo.currentText() == "Суммарное эхо":
+                top = data.get("top_bins", [])
+                if top:
+                    self.tf_bin_combo.blockSignals(True)
+                    self.tf_bin_combo.setCurrentText(f"Бин {top[0]}")
+                    self.tf_bin_combo.blockSignals(False)
+        if hasattr(self, "_tf_data") and self._tf_data is not None:
+            self.tf_frame_slider.setValue(0)
+            self._redraw_tf()
+
+    def _current_tf_bin(self):
+        text = self.tf_bin_combo.currentText()
+        if text == "Суммарное эхо":
+            return int(self._tf_data["top_bins"][0])
+        return int(text.split()[-1])
+
+    def _tf_wvd_image(self, bin_idx):
+        """WVD бина (лениво + кэш): строки = время, столбцы = частота."""
+        if getattr(self, "_tf_wvd_cache", None) is None:
+            self._tf_wvd_cache = {}
+        key = str(bin_idx)
+        if key not in self._tf_wvd_cache:
+            data = self._tf_data
+            row = np.asarray(data["rows"][key])
+            t_ax, f_ax, W = wigner_ville(row, fs=data["fs"])
+            db = 20.0 * np.log10(np.abs(W) + 1e-12)
+            db -= float(db.max())
+            self._tf_wvd_cache[key] = (
+                np.ascontiguousarray(db), np.asarray(t_ax), np.asarray(f_ax)
+            )
+        return self._tf_wvd_cache[key]
+
+    def _show_tf_image(self, img, x_axis, y_axis, x_label, y_label, title):
+        """imshow(S_db) — imshow(..., aspect="auto", vmin=-40, vmax=0)."""
+        arr = np.asarray(img, dtype=float)
+        self.tf_img.setImage(arr, levels=(-40, 0))
+        x0, x1 = float(x_axis[0]), float(x_axis[-1])
+        if y_axis is None:
+            y_axis = np.arange(arr.shape[0])
+        y0, y1 = float(y_axis[0]), float(y_axis[-1])
+        self.tf_img.setRect(QRectF(x0, y0, x1 - x0, y1 - y0))
+        vb = self.pg_tf.getPlotItem().getViewBox()
+        vb.enableAutoRange()
+        vb.updateAutoRange()
+        self.pg_tf.setLabel("bottom", x_label)
+        self.pg_tf.setLabel("left", y_label)
+        self.pg_tf.setTitle(title)
+
+    def _redraw_tf(self, *_):
+        data = getattr(self, "_tf_data", None)
+        if data is None:
+            return
+        f = np.asarray(data["f"])
+        t = np.asarray(data["t"])
+        frame_idx = np.asarray(data["frame_idx"])
+        M = np.asarray(data["Q_mag"]).shape[0]
+        slider = self.tf_frame_slider.value()
+
+        if self.tf_marginal_check.isChecked():
+            # I(r, f) = Σ_t Q — маргинал куба, ≈ азимутальное Фурье (TF, 5.18)
+            self.tf_frame_slider.setEnabled(False)
+            marg = np.asarray(rid_marginal(data))
+            marg_db = 20.0 * np.log10(marg + 1e-12)
+            marg_db -= float(marg_db.max())
+            self._show_tf_image(
+                marg_db, f, np.arange(M),
+                "Доплер, Гц", "Дальность, бин",
+                "RID-маргинал Σ_t Q (≈ Фурье-изображение)")
+            return
+
+        self.tf_frame_slider.setEnabled(True)
+
+        # Слйдер «Кадр t» выбирает мгновенный RID-кадр куба Q(r, f, t)
+        if slider != 0:
+            k = int(frame_idx[slider])
+            self.tf_frame_label.setText(f"Кадр {k} / {t[k]:.3f} с")
+            self._show_tf_image(
+                rid_frame(data, slider), f, np.arange(M),
+                "Доплер, Гц", "Дальность, бин",
+                f"RID-кадр t = {t[k]:.3f} с")
+            return
+
+        self.tf_frame_label.setText("—")
+
+        if self.tf_transform_combo.currentText() == "WVD":
+            bin_idx = self._current_tf_bin()
+            img, t_ax, f_ax = self._tf_wvd_image(bin_idx)
+            self._show_tf_image(img, f_ax, t_ax,
+                                "Доплер, Гц", "Время, с",
+                                f"WVD, бин {bin_idx}")
+            return
+
+        # STFT-спектрограмма: суммарное эхо или выбранный бин
+        if self.tf_bin_combo.currentText() == "Суммарное эхо":
+            sig, title = data["total_echo"], "Спектрограмма суммарного эха"
+        else:
+            bin_idx = self._current_tf_bin()
+            sig, title = data["signatures"][str(bin_idx)], f"Спектрограмма бина {bin_idx}"
+        self._show_tf_image(
+            np.asarray(sig["S_db"]), np.asarray(sig["t"]), np.asarray(sig["f"]),
+            "Время, с", "Доплер, Гц", title)
+
     def _on_error(self, msg):
         logger.error(msg)
         self.info_label.setObjectName("status_error")
@@ -991,12 +1306,22 @@ class MainWindow(QMainWindow):
             num_pulses=self.cfg.num_pulses,
             use_mocomp=self.cfg.use_mocomp,
             window=self.cfg.window,
+            window_param=self.cfg.window_param,
+            range_window=self.cfg.range_window,
             display_mode=self.cfg.display_mode,
             snr_db=self.cfg.snr_db,
             effects=self._make_effects(),
             accel=self.cfg.accel,
+            gamma=self.cfg.gamma,
             vib_amplitude=self.cfg.vib_amplitude_mm / 1000.0,
             vib_frequency=self.cfg.vib_frequency_hz,
+            target_model=self.cfg.target_model,
+            satellite=self.cfg.satellite,
+            omega_axis_y=self.cfg.omega_axis_y,
+            omega_axis_z=self.cfg.omega_axis_z,
+            precession_rate=self.cfg.precession_rate,
+            precession_angle_deg=self.cfg.precession_angle_deg,
+            cross_range_scaling=self.cfg.cross_range_scaling,
             save_dir=save_dir,
             mode="stream",
         )
@@ -1049,7 +1374,7 @@ class MainWindow(QMainWindow):
         self._render_timer = QTimer()
         self._render_timer.timeout.connect(self._show_next_stream_frame)
         self._render_timer.start(75)
-        self.tabs.setCurrentIndex(4)
+        self.tabs.setCurrentIndex(5)
         self.statusBar().showMessage("Вывод результатов...")
 
     def _show_next_stream_frame(self):

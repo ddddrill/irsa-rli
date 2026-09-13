@@ -1,10 +1,12 @@
 import numpy as np
 from scipy.fft import ifft, fftshift
 
+from processing.windows import get_weighting
+
 SPEED_OF_LIGHT = 3e8
 
 
-def range_compress(E, f_r, R0=0.0):
+def range_compress(E, f_r, R0=0.0, window="none", window_param=None):
     """Сжатие по дальности: 1D IFFT по оси частот (быстрое время).
 
     Переход из частотной области (сырые данные SFCW) в дальностную область
@@ -15,10 +17,21 @@ def range_compress(E, f_r, R0=0.0):
     начальной дальности. После дешифрки цель появляется в бине,
     соответствующем дифференциальной дальности (R - R0).
 
+    Опциональное взвешивание применяется к столбцам E (axis=0) ДО ifft —
+    C&M, §3.3: окно управляет боковыми лепестками только до преобразования
+    Фурье. Когерентное усиление компенсируется нормировкой win/win.mean()
+    (C&M, §6.3.1), так что амплитуда пиков сопоставима между окнами.
+    Для window="none" (boxcar) нормировка не применяется — результат
+    битово идентичен версии без взвешивания.
+
     Args:
         E: комплексная матрица сырых данных M×N (частоты × импульсы).
         f_r: вектор частот (M,).
         R0: начальная дальность до ЦМ (м). Если 0 — дешифровка не нужна.
+        window: окно взвешивания: "none" | "hamming" | "hann" | "kaiser" |
+            "chebwin" | "taylor".
+        window_param: beta для kaiser (по умолч. 8.0) или at-дБ для chebwin
+            (по умолч. 60.0); для taylor — dict(nbar=4, sll=-35.0).
 
     Returns:
         P: матрица профилей дальности M×N (комплексная, fftshift).
@@ -31,6 +44,9 @@ def range_compress(E, f_r, R0=0.0):
     if R0 != 0.0:
         E_ref = np.exp(1j * 4.0 * np.pi * f_r / SPEED_OF_LIGHT * R0)
         E = E * E_ref[:, np.newaxis]
+
+    win = get_weighting(window, M, window_param)
+    E = E * win[:, np.newaxis]
 
     P = fftshift(ifft(E, axis=0), axes=0)
     P_abs = np.abs(P)

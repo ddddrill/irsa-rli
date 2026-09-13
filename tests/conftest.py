@@ -39,3 +39,22 @@ def reference_matrix(radar, target):
     return (sc["intens"][None, None, :] *
             np.exp(1j * (-4.0 * np.pi * f_col / SPEED_OF_LIGHT * R[None, :, :]))
             ).sum(axis=2)
+
+
+@pytest.fixture(scope="session")
+def radar_tf():
+    """Радар для TF-анализа: X-диапазон, 10 ГГц (план §7.5)."""
+    return Radar(
+        c=SPEED_OF_LIGHT, f_c=10e9, Xmax=20.0, Ymax=20.0,
+        spectr_w=0.5e9, ph_c=0.0, ang=14.0, nifft_size=256,
+    )
+
+
+@pytest.fixture(scope="session")
+def target_tf():
+    """Цель для TF-анализа: медлённая вращающаяся солнечная панель (§7.5)."""
+    omega = math.radians(9.0) / 256.0
+    return Target(
+        MATRIX, pri=0.05, num_pulses=256, R0=500000.0,
+        V=0.0, alpha=0.0, omega=omega,
+    )
