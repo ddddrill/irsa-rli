@@ -16,6 +16,7 @@ python -m examples.demo_motion_blur
 python -m examples.demo_full_pipeline_mocomp
 python -m examples.demo_large_angle
 python -m examples.demo_polar_reformatting_validation
+python -m examples.demo_maneuvering_target
 python -m examples.test_data_processor_polar
 ```
 
@@ -114,6 +115,26 @@ python -m examples.test_data_processor_polar
 
 ---
 
+## Демо 6: Маневрирующая цель (RD vs STFT vs RID-кадр)
+
+**Скрипт:** `demo_maneuvering_target.py`
+
+**Сценарий:** равномерное вращение + угловое ускорение γ (маневрирующая цель, §6.5 плана; C&M, §3.2; TF, §5.4). Угол поворота
+θ(t) = ω·t + 0.5·γ·t² — C&M, (1.13).
+
+**Параметры:** `f_c=10 ГГц` (λ = 3 см), `B=300 МГц` (dr = 0.5 м), `PRI=0.05 с`, `N=256` (T = 12.8 с), `ω=0.01 рад/с`, `γ=2e-4 рад/с²` → Δθ_total ≈ 0.144 рад ≈ 8.3°; цель `solarB_mid` (кросс-рейндж до ≈ 7 м, веер Доплера цели ≈ 9.2 Гц < fs/2 = 10 Гц, без алиасинга).
+
+**Что показывает (физика §6.2):** мгновенная угловая скорость θ̇(t) = ω + γ·t линейно растёт, поэтому Доплер каждого рассеивателя
+f_D(t) ≈ −(2/λ)·u·(ω + γ·t) — линейный чирп (6.2.2)–(6.2.3). RD-изображение (азимутальное БПФ за всю апертуру T) честно размазывается — по Доплеру чирпом |df_D/dt|·T ≈ 2.1 Гц (критерий QPE (6.2.5) нарушается в ~30 раз), по дальности миграцией y·ω·T ≈ 0.9 м ≈ 1.8 dr. STFT-спектрограмма сильнейшего дальностного бина (панель 2) показывает наклонный чирпирующий гребень f_D(t). RID-кадр в середине апертуры (панель 3, окно T_w = 1.6 с) «замораживает» вращение: за время окна чирп набегает всего ≈ 0.3 Гц, что меньше разрешения кадра 1/T_w = 0.625 Гц (§6.2.3, §6.2.5) — получается «мгновенный снимок».
+
+**Метрики (панель 4):** энтропия (compute_image_entropy) RD-изображения, RD на STFT-сетке, маргинала RID Σ_t|Q|² и отдельного RID-кадра. Энтропия кадра ниже энтропии RD минимум на 15 % (критерий приёмки §6.5), для наших параметров — ≈ 24 %.
+
+**Выход:** `demo_maneuvering_target.png`
+
+![Маневрирующая цель](demo_maneuvering_target.png)
+
+---
+
 ## Интеграционный тест: DataProcessor + Polar Reformat
 
 **Скрипт:** `test_data_processor_polar.py`
@@ -152,4 +173,5 @@ python -m examples.test_data_processor_polar
 | demo_full_pipeline_mocomp | 50 | вкл | 15° | стандартный | Точки после MOCOMP |
 | demo_large_angle | 0 | — | 15° | стандартный + полярный | Arc smearing vs k-space |
 | demo_polar_reformatting_validation | 0 | — | 15° | наивный / полярный | 3 графика сравнения |
+| demo_maneuvering_target | 0 | — | 8.3°+γ | стандартный + STFT + RID | Чирп, smear vs RID-мгновенный снимок |
 | test_data_processor_polar | 0 | выкл | 15° | оба | Автотест с метриками |
