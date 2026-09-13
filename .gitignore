@@ -64,3 +64,6 @@ htmlcov/
 
 # Git worktrees
 .worktrees/
+
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/

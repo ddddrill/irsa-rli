@@ -237,8 +237,12 @@ $$E[m,n] = \sum_i \sigma_i \cdot \exp\left(-j\frac{4\pi f_m R_i(t_n)}{c}\right),
 **Проверить порог в коде:**
 ```python
 from processing.polar_reformat import should_use_polar_reformat
-use_polar, dtheta_rad, dtheta_deg = should_use_polar_reformat(omega, pri, N, threshold_deg=3.0)
-print(f"Δθ = {dtheta_deg:.2f}°  →  {'POLAR' if use_polar else 'STANDARD'}")
+use_polar, dtheta_rad, dtheta_deg, threshold_used_deg, threshold_source = (
+    should_use_polar_reformat(omega, pri, N,
+                              wavelength=wavelength, target_size_los=L_los)
+)
+print(f"Δθ = {dtheta_deg:.2f}°  →  {'POLAR' if use_polar else 'STANDARD'}  "
+      f"(порог {threshold_used_deg:.2f}°, source={threshold_source})")
 ```
 
 ---

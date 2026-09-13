@@ -36,18 +36,38 @@ class AppConfig:
     satellite: str = "solarB"
     range_km: float = 500.0             # дальность до объекта, км
 
+    # Модель цели и ось вращения (GUI передаёт в DataProcessor;
+    # 3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8)
+    target_model: str = "точечная"      # точечная / формы (json)
+    omega_axis_y: float = 0.0           # Y-компонента оси вращения (X=0)
+    omega_axis_z: float = 0.0           # Z-компонента оси вращения
+    precession_rate: float = 0.0        # частота прецессии оси, рад/с
+    precession_angle_deg: float = 0.0   # полуразворот конуса прецессии, град
+
     # Кинематика цели
     V: float = 0.0                      # скорость трансляции, м/с
     alpha: float = 0.0                  # угол направления движения, град
     omega: float = 0.0                  # угловая скорость, рад/с (0 = auto из beam_width)
+    gamma: float = 0.0                  # угловое ускорение, рад/с² (0 = равномерное вращение)
     pri: float = 1.0                    # период повторения импульсов, с
     num_pulses: int = 1000              # число импульсов (= размер азимутальной оси РЛИ)
 
     # Обработка
     use_mocomp: bool = True             # включить компенсацию движения
-    window: str = "none"                # оконная функция: none, hamming, hann
+    window: str = "none"                # азимутальное окно: none, hamming, hann, kaiser, chebwin, taylor
+    window_param: float = None          # параметр окна: beta (kaiser, дефолт 8.0) или at-дБ (chebwin, дефолт 60.0)
+    range_window: str = "none"          # дальностное окно (тот же набор); "none" = честная PSF Дирихле
     display_mode: str = "dB"            # режим отображения: linear, dB
     snr_db: float = float('inf')        # SNR в дБ (inf = без шума)
+
+    # TF-анализ (вкладка «Сигнатуры»; дефолт выключен — битовая совместимость)
+    tf_enabled: bool = False            # расчёт RID-куба и сигнатур в стандартном конвейере
+    tf_n_frames: int = 16               # число RID-кадров куба (16–32, [TF, §5.3])
+    tf_window: str = "hann"             # окно STFT/RID (processing.windows.WINDOW_NAMES)
+
+    # Кросс-масштабирование по данным (chirp-rate): off / auto
+    cross_range_scaling: str = "off"    # off = без изменений конвейера; auto = заменить ось азимута оценкой Omega_eff
+    use_keystone: bool = False          # keystone-коррекция миграции ячеек дальности (C&M, §5.5); False = битовая идентичность
 
     # Эффекты реализма (все выключены = классическая модель)
     realism_preset: str = "Идеальный"   # Идеальный / Реалистичный / Пользовательский
