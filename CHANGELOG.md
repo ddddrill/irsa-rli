@@ -73,6 +73,17 @@
 - Демо `examples/demo_micro_doppler_stft.py` (вибрация: профили, STFT-спектрограмма + пунктиры ±6.28 Гц, WVD, суммарная сигнатура; PNG) и `examples/demo_rid_imaging.py` (16 RID-кадров, маргинал vs |FFT|², печать относительной ошибки; PNG).
 - `pytest tests/ -q`: **53 passed** (46 + 7 новых).
 
+### Задача R5b: GUI-вкладка «Сигнатуры» и сигнал `tf_ready`
+
+TF-анализ из R5a подключён к GUI: новая вкладка «Сигнатуры» (позиция 4, между «РЛИ» и «Поток кадров») и сигнал `DataProcessor.tf_ready` для стандартного конвейера (гл. 2/5). Дефолт выключен — конвейер битово идентичен прежнему.
+
+- `processing/data_processor.py` — сигнал `tf_ready = pyqtSignal(object)` (dict) рядом с `isar_ready`; kwargs `tf_enabled=False, tf_n_frames=16, tf_window="hann"`. В `_compute_isar_standard` ПОСЛЕ MOCOMP-блока (P_proc выровнен) при `tf_enabled` считаются `rid_cube(P_proc, fs=1/pri, n_frames, window)` + спектрограммы топ-5 бинов (`strongest_range_bins`) и суммарного эха; эмитится один dict за прогон (куб, `top_bins`, `signatures`, `total_echo`, строки P для WVD, `fs`, `n_frames`). Прогресс через `progress_message` («TF-анализ: STFT…»). Полярный путь не тронут.
+- `ui/main_window.py` — вкладка «Сигнатуры» (между «РЛИ» и «Поток кадров», индексы 3/4/5 обновлены и в `_show_stream_results`): QComboBox «Дальний бин» («Суммарное эхо» + топ-5 бинов, обновляется на каждый `tf_ready`), QComboBox «Преобразование» (STFT/WVD; WVD «Суммарного эха» автоматически заменяется топ-бином), QSlider «Кадр t» с подписью времени кадра, чекбокс «Маргинальная сумма (≈ Фурье)». Канвас — pyqtgraph ImageItem (паттерн вкладок «Сигнал»/«РЛИ»), `imshow(S_db, vmin=-40, vmax=0)`, оси «Доплер, Гц» / «Время, с». Режимы: STFT-спектрограмма бина/суммарного эха, WVD (лениво + кэш из строк куба), RID-кадр (слйдер), маргинал `Σ_t Q` [TF, (5.18)].
+- `config.py` — поля `tf_enabled: bool = False`, `tf_n_frames: int = 16`, `tf_window: str = "hann"` в блоке «Обработка».
+- `PARAMETERS_GUIDE.md` — раздел «Частотно-временной анализ: вкладка „Сигнатуры“»: выбор `nperseg` по критерию (7.2.8) `T_w < 1/√|df_D/dt|` и кросс-рейндж-границе, число кадров 16–32 [TF, §5.3], единицы «Доплер, Гц» (`fs = 1/PRI`).
+- Тесты `tests/test_tf_gui.py` (TDD, красный→зелёный): битовая идентичность при `tf_enabled=False`/без поля (± явный прежний конвейер, сигнал не эмитится), `tf_enabled=True` → dict с `Q_mag (M,F,T)`/`frame_idx`/`top_bins≥5`, GUI smoke offscreen (вкладка на позиции 4, элементы на месте), обновление контролов и всех режимов отрисовки, `rid_frame`/`rid_marginal` dB-smoke. Замер переключения бина/кадра на пресете 256×256 — макс. ~2 мс (≤ 200 мс).
+- `pytest tests/ -q`: **59 passed** (54 + 5 новых).
+
 ## [2.4.0] — 2026-06-30
 
 ### Добавлено

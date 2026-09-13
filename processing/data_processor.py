@@ -55,6 +55,7 @@ class DataProcessor(QThread):
     mocomp_before_after = pyqtSignal(object, object, object)
     isar_ready = pyqtSignal(object, object, object)
     signal_data_ready = pyqtSignal(object, object)
+    tf_ready = pyqtSignal(object)  # dict RID-куба и сигнатур (вкладка «Сигнатуры»)
 
     # Логирование в GUI
     progress_message = pyqtSignal(str)
@@ -68,7 +69,9 @@ class DataProcessor(QThread):
                  effects=None, accel=0.0, vib_amplitude=0.0, vib_frequency=1.0,
                  gamma=0.0,
                  target_model="точечная", omega_axis_y=0.0, omega_axis_z=0.0,
-                 precession_rate=0.0, precession_angle_deg=0.0, satellite=None):
+                 precession_rate=0.0, precession_angle_deg=0.0,
+                 tf_enabled=False, tf_n_frames=16, tf_window="hann",
+                 satellite=None):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -109,6 +112,10 @@ class DataProcessor(QThread):
         self.omega_axis_z = omega_axis_z
         self.precession_rate = precession_rate
         self.precession_angle_deg = precession_angle_deg
+        # TF-анализ (вкладка «Сигнатуры»): выключен → битовая совместимость
+        self.tf_enabled = tf_enabled
+        self.tf_n_frames = tf_n_frames
+        self.tf_window = tf_window
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -333,6 +340,47 @@ class DataProcessor(QThread):
             self.mocomp_envelope_ready.emit(np.zeros(self.num_pulses), self.num_pulses)
             self.mocomp_phase_ready.emit(np.zeros(self.num_pulses))
             self.mocomp_before_after.emit(P_abs, P_abs, range_axis)
+
+        # 3b. TF-анализ (вкладка «Сигнатуры»): RID-куб и спектрограммы топ-K
+        #     бинов — только по включённому флагу (дефолт off = без изменений).
+        #     P_proc уже выровнен MOCOMP-блоком; сигнал эмитится один раз.
+        if self.tf_enabled:
+            from processing.tf_analysis import (
+                micro_doppler_signature,
+                rid_cube,
+                strongest_range_bins,
+                total_echo_signature,
+            )
+            self.progress_message.emit("TF-анализ: STFT…")
+            fs = 1.0 / self.pri
+            top_k = strongest_range_bins(P_proc, k=5)
+            rid = rid_cube(P_proc, fs=fs, n_frames=self.tf_n_frames,
+                           window=self.tf_window)
+            signatures = {}
+            for b in top_k:
+                f_b, t_b, s_db = micro_doppler_signature(
+                    P_proc, b, fs=fs, window=self.tf_window)
+                signatures[str(int(b))] = {"f": f_b, "t": t_b, "S_db": s_db}
+            total_echo = total_echo_signature(P_proc, fs=fs,
+                                              window=self.tf_window)
+            rows = {str(int(b)): np.asarray(P_proc[b]) for b in top_k}
+            self.tf_ready.emit({
+                "Q_mag": rid["Q_mag"],
+                "f": rid["f"],
+                "t": rid["t"],
+                "frame_idx": rid["frame_idx"],
+                "approximate": rid["approximate"],
+                "meta": rid["meta"],
+                "top_bins": [int(b) for b in top_k],
+                "signatures": signatures,
+                "total_echo": total_echo,
+                "rows": rows,
+                "fs": fs,
+                "n_frames": self.tf_n_frames,
+            })
+            self.progress_message.emit(
+                f"TF-анализ: RID-куб {rid['Q_mag'].shape} готов"
+            )
 
         # 4. Азимутальное сжатие
         self.progress_message.emit("Азимутальное сжатие...")

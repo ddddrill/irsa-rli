@@ -60,6 +60,11 @@ class AppConfig:
     display_mode: str = "dB"            # режим отображения: linear, dB
     snr_db: float = float('inf')        # SNR в дБ (inf = без шума)
 
+    # TF-анализ (вкладка «Сигнатуры»; дефолт выключен — битовая совместимость)
+    tf_enabled: bool = False            # расчёт RID-куба и сигнатур в стандартном конвейере
+    tf_n_frames: int = 16               # число RID-кадров куба (16–32, [TF, §5.3])
+    tf_window: str = "hann"             # окно STFT/RID (processing.windows.WINDOW_NAMES)
+
     # Эффекты реализма (все выключены = классическая модель)
     realism_preset: str = "Идеальный"   # Идеальный / Реалистичный / Пользовательский
     seed: int = 42                      # базовый seed генераторов случайности

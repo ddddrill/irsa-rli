@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QSplitter, QScrollArea, QWidget,
     QTabWidget, QCheckBox, QGridLayout, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView,
+    QSlider,
 )
 from PyQt5.QtCore import Qt, QTimer, QRectF, QThread
 from PyQt5.QtGui import QPixmap
@@ -20,6 +21,7 @@ from paths import resource_path, app_dir
 from filenames import get_matrix_filename
 from processing import DataProcessor
 from processing.windows import WINDOW_NAMES
+from processing.tf_analysis import rid_frame, rid_marginal, wigner_ville
 from ui.styles import APP_STYLE
 from ui.help_dialog import HelpDialog
 
@@ -504,7 +506,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_mocomp_tab(), "Компенсация движения")
         # Вкладка 3: РЛИ
         self.tabs.addTab(self._build_isar_tab(), "РЛИ")
-        # Вкладка 4: Поток кадров
+        # Вкладка 4: Сигнатуры (TF-анализ: STFT/WVD/RID)
+        self.tabs.addTab(self._build_tf_tab(), "Сигнатуры")
+        # Вкладка 5: Поток кадров
         self.tabs.addTab(self._build_stream_tab(), "Поток кадров")
 
         return self.tabs
@@ -695,6 +699,76 @@ class MainWindow(QMainWindow):
         self.pg_isar.getPlotItem().getViewBox().addItem(self.isar_img)
 
         layout.addWidget(self.pg_isar)
+        return widget
+
+    def _build_tf_tab(self):
+        """Вкладка «Сигнатуры»: TF-анализ (STFT/WVD) и RID-куб (§7.6)."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(8)
+
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        left.addWidget(self._section_label("Сигнатуры (TF-анализ)"))
+
+        bin_lbl = QLabel("Дальний бин")
+        bin_lbl.setObjectName("status_info")
+        self.tf_bin_combo = QComboBox()
+        self.tf_bin_combo.addItem("Суммарное эхо")
+        self.tf_bin_combo.currentIndexChanged.connect(self._on_tf_bin_changed)
+        left.addWidget(bin_lbl)
+        left.addWidget(self.tf_bin_combo)
+
+        tr_lbl = QLabel("Преобразование")
+        tr_lbl.setObjectName("status_info")
+        self.tf_transform_combo = QComboBox()
+        self.tf_transform_combo.addItems(["STFT", "WVD"])
+        self.tf_transform_combo.currentIndexChanged.connect(self._on_tf_transform_changed)
+        left.addWidget(tr_lbl)
+        left.addWidget(self.tf_transform_combo)
+
+        self.tf_marginal_check = QCheckBox("Маргинальная сумма (≈ Фурье)")
+        self.tf_marginal_check.setToolTip(
+            "I(r, f) = Σ_t Q(r, f, t) — маргинал RID-куба (TF, (5.18)); "
+            "при hop=1 совпадает с азимутальным Фурье-изображением."
+        )
+        self.tf_marginal_check.stateChanged.connect(self._redraw_tf)
+        left.addWidget(self.tf_marginal_check)
+
+        slider_row = QHBoxLayout()
+        slider_row.setSpacing(6)
+        slider_row.addWidget(QLabel("Кадр t"))
+        self.tf_frame_slider = QSlider(Qt.Horizontal)
+        self.tf_frame_slider.setRange(0, 0)
+        self.tf_frame_slider.setEnabled(False)
+        self.tf_frame_slider.setToolTip("Кадр времени RID-куба Q(r, f, t)")
+        self.tf_frame_slider.valueChanged.connect(self._redraw_tf)
+        self.tf_frame_label = QLabel("—")
+        self.tf_frame_label.setObjectName("status_info")
+        slider_row.addWidget(self.tf_frame_slider, stretch=1)
+        slider_row.addWidget(self.tf_frame_label)
+        left.addLayout(slider_row)
+
+        self.tf_status_label = QLabel(
+            "Нет данных. Включите tf_enabled в config для TF-анализа."
+        )
+        self.tf_status_label.setObjectName("status_info")
+        self.tf_status_label.setWordWrap(True)
+        left.addWidget(self.tf_status_label)
+        left.addStretch()
+
+        right = QVBoxLayout()
+        self.pg_tf = pg.PlotWidget(background="#fafafa")
+        self.pg_tf.setLabel("left", "Доплер, Гц")
+        self.pg_tf.setLabel("bottom", "Время, с")
+        self.pg_tf.setTitle("Сигнатуры (STFT)")
+        self.tf_img = pg.ImageItem()
+        self.pg_tf.getPlotItem().getViewBox().addItem(self.tf_img)
+        right.addWidget(self.pg_tf, stretch=1)
+
+        layout.addLayout(left, stretch=1)
+        layout.addLayout(right, stretch=3)
         return widget
 
     def _build_stream_tab(self):
@@ -921,6 +995,9 @@ class MainWindow(QMainWindow):
             omega_axis_z=self.cfg.omega_axis_z,
             precession_rate=self.cfg.precession_rate,
             precession_angle_deg=self.cfg.precession_angle_deg,
+            tf_enabled=self.cfg.tf_enabled,
+            tf_n_frames=self.cfg.tf_n_frames,
+            tf_window=self.cfg.tf_window,
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -930,6 +1007,7 @@ class MainWindow(QMainWindow):
         self.processor.mocomp_before_after.connect(self._on_mocomp_before_after)
         self.processor.isar_ready.connect(self._on_isar_ready)
         self.processor.signal_data_ready.connect(self._on_signal_data)
+        self.processor.tf_ready.connect(self._on_tf_ready)
         self.processor.progress_message.connect(self._on_progress_message)
         self.processor.error_occurred.connect(self._on_error)
 
@@ -1019,6 +1097,148 @@ class MainWindow(QMainWindow):
         self.info_label.style().unpolish(self.info_label)
         self.info_label.style().polish(self.info_label)
         self.info_label.setText(msg)
+
+    # ================================================================
+    #  Вкладка «Сигнатуры»: tf_ready и отрисовка TF/RID (§7.6)
+    # ================================================================
+
+    def _on_tf_ready(self, data):
+        """Новые данные TF-анализа: наполнить селекторы и перерисовать."""
+        self._tf_data = data
+        self._tf_wvd_cache = {}
+        top = data.get("top_bins", [])
+        self.tf_bin_combo.blockSignals(True)
+        self.tf_bin_combo.clear()
+        self.tf_bin_combo.addItem("Суммарное эхо")
+        for b in top:
+            self.tf_bin_combo.addItem(f"Бин {b}")
+        self.tf_bin_combo.blockSignals(False)
+
+        n_frames = int(len(data.get("frame_idx", [])))
+        self.tf_frame_slider.blockSignals(True)
+        self.tf_frame_slider.setRange(0, max(0, n_frames - 1))
+        self.tf_frame_slider.setValue(0)
+        self.tf_frame_slider.blockSignals(False)
+
+        meta = data.get("meta", {})
+        approx = "да" if data.get("approximate") else "нет"
+        self.tf_status_label.setText(
+            f"RID-куб {tuple(data['Q_mag'].shape)} | кадров {n_frames} | "
+            f"nperseg {meta.get('nperseg', '?')} | hop {meta.get('hop', '?')} | "
+            f"approximate: {approx}"
+        )
+        self._redraw_tf()
+
+    def _on_tf_bin_changed(self, *_):
+        if hasattr(self, "_tf_data") and self._tf_data is not None:
+            self.tf_frame_slider.setValue(0)
+            self._redraw_tf()
+
+    def _on_tf_transform_changed(self, *_):
+        # WVD для суммарного эха не рассчитываем — подставляем топ-бин (§7.6)
+        if self.tf_transform_combo.currentText() == "WVD":
+            data = getattr(self, "_tf_data", None)
+            if data is not None and self.tf_bin_combo.currentText() == "Суммарное эхо":
+                top = data.get("top_bins", [])
+                if top:
+                    self.tf_bin_combo.blockSignals(True)
+                    self.tf_bin_combo.setCurrentText(f"Бин {top[0]}")
+                    self.tf_bin_combo.blockSignals(False)
+        if hasattr(self, "_tf_data") and self._tf_data is not None:
+            self.tf_frame_slider.setValue(0)
+            self._redraw_tf()
+
+    def _current_tf_bin(self):
+        text = self.tf_bin_combo.currentText()
+        if text == "Суммарное эхо":
+            return int(self._tf_data["top_bins"][0])
+        return int(text.split()[-1])
+
+    def _tf_wvd_image(self, bin_idx):
+        """WVD бина (лениво + кэш): строки = время, столбцы = частота."""
+        if getattr(self, "_tf_wvd_cache", None) is None:
+            self._tf_wvd_cache = {}
+        key = str(bin_idx)
+        if key not in self._tf_wvd_cache:
+            data = self._tf_data
+            row = np.asarray(data["rows"][key])
+            t_ax, f_ax, W = wigner_ville(row, fs=data["fs"])
+            db = 20.0 * np.log10(np.abs(W) + 1e-12)
+            db -= float(db.max())
+            self._tf_wvd_cache[key] = (
+                np.ascontiguousarray(db), np.asarray(t_ax), np.asarray(f_ax)
+            )
+        return self._tf_wvd_cache[key]
+
+    def _show_tf_image(self, img, x_axis, y_axis, x_label, y_label, title):
+        """imshow(S_db) — imshow(..., aspect="auto", vmin=-40, vmax=0)."""
+        arr = np.asarray(img, dtype=float)
+        self.tf_img.setImage(arr, levels=(-40, 0))
+        x0, x1 = float(x_axis[0]), float(x_axis[-1])
+        if y_axis is None:
+            y_axis = np.arange(arr.shape[0])
+        y0, y1 = float(y_axis[0]), float(y_axis[-1])
+        self.tf_img.setRect(QRectF(x0, y0, x1 - x0, y1 - y0))
+        vb = self.pg_tf.getPlotItem().getViewBox()
+        vb.enableAutoRange()
+        vb.updateAutoRange()
+        self.pg_tf.setLabel("bottom", x_label)
+        self.pg_tf.setLabel("left", y_label)
+        self.pg_tf.setTitle(title)
+
+    def _redraw_tf(self, *_):
+        data = getattr(self, "_tf_data", None)
+        if data is None:
+            return
+        f = np.asarray(data["f"])
+        t = np.asarray(data["t"])
+        frame_idx = np.asarray(data["frame_idx"])
+        M = np.asarray(data["Q_mag"]).shape[0]
+        slider = self.tf_frame_slider.value()
+
+        if self.tf_marginal_check.isChecked():
+            # I(r, f) = Σ_t Q — маргинал куба, ≈ азимутальное Фурье (TF, 5.18)
+            self.tf_frame_slider.setEnabled(False)
+            marg = np.asarray(rid_marginal(data))
+            marg_db = 20.0 * np.log10(marg + 1e-12)
+            marg_db -= float(marg_db.max())
+            self._show_tf_image(
+                marg_db, f, np.arange(M),
+                "Доплер, Гц", "Дальность, бин",
+                "RID-маргинал Σ_t Q (≈ Фурье-изображение)")
+            return
+
+        self.tf_frame_slider.setEnabled(True)
+
+        # Слйдер «Кадр t» выбирает мгновенный RID-кадр куба Q(r, f, t)
+        if slider != 0:
+            k = int(frame_idx[slider])
+            self.tf_frame_label.setText(f"Кадр {k} / {t[k]:.3f} с")
+            self._show_tf_image(
+                rid_frame(data, slider), f, np.arange(M),
+                "Доплер, Гц", "Дальность, бин",
+                f"RID-кадр t = {t[k]:.3f} с")
+            return
+
+        self.tf_frame_label.setText("—")
+
+        if self.tf_transform_combo.currentText() == "WVD":
+            bin_idx = self._current_tf_bin()
+            img, t_ax, f_ax = self._tf_wvd_image(bin_idx)
+            self._show_tf_image(img, f_ax, t_ax,
+                                "Доплер, Гц", "Время, с",
+                                f"WVD, бин {bin_idx}")
+            return
+
+        # STFT-спектрограмма: суммарное эхо или выбранный бин
+        if self.tf_bin_combo.currentText() == "Суммарное эхо":
+            sig, title = data["total_echo"], "Спектрограмма суммарного эха"
+        else:
+            bin_idx = self._current_tf_bin()
+            sig, title = data["signatures"][str(bin_idx)], f"Спектрограмма бина {bin_idx}"
+        self._show_tf_image(
+            np.asarray(sig["S_db"]), np.asarray(sig["t"]), np.asarray(sig["f"]),
+            "Время, с", "Доплер, Гц", title)
 
     def _on_error(self, msg):
         logger.error(msg)
@@ -1137,7 +1357,7 @@ class MainWindow(QMainWindow):
         self._render_timer = QTimer()
         self._render_timer.timeout.connect(self._show_next_stream_frame)
         self._render_timer.start(75)
-        self.tabs.setCurrentIndex(4)
+        self.tabs.setCurrentIndex(5)
         self.statusBar().showMessage("Вывод результатов...")
 
     def _show_next_stream_frame(self):
