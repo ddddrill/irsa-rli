@@ -53,7 +53,7 @@ def keystone_transform(E, f_r, f_c, method="sinc", pad=None):
 
     Returns:
         E_ks: перешкалированная матрица (M×N) — каждая строка ресемплирована
-        на равномерной если медленного времени j·PRI.
+        на равномерной сетке медленного времени j·PRI.
 
     Raises:
         ValueError: если method не "sinc"/"cubic".
@@ -134,7 +134,7 @@ def _resample_sinc(E_pad, idx):
 def _resample_cubic(E_pad, idx):
     """Fallback: по-строчный CubicSpline на исходной строке с приставкой.
 
-    Комплексный ряд интерполируется как есть (scipy поддерживает complex>):
+    Комплексный ряд интерполируется как есть (scipy поддерживает complex):
     CubicSpline(np.arange(N+2p), row_padded)(idx). Точность на низких
     «демо-частотах» ≤ 1e-2 (§9.6.1); растёт с частотой как (ω·h)^4.
     """

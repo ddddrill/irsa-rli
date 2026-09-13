@@ -288,29 +288,15 @@ def cross_range_scale(
         raise ValueError("doppler_axis length must match image columns")
 
     segments = segment_dominant_scatterers(I, range_axis, doppler_axis, **seg_kwargs)
-    empty = dict(omega_eff=0.0, r2=0.0, n_used=0, points=[],
-                 azimuth_axis_m=None, azimuth_axis_hz=None, fallback=True)
-    if not segments:
-        return empty
+    empty = dict(omega_eff=0.0, K=None, intercept=None, r2=0.0, n_used=0,
+                 points=[], azimuth_axis_m=None,
+                 azimuth_axis_hz=np.asarray(doppler_axis, float).copy(),
+                 fallback=True)
     if len(segments) < 3:
         return empty
 
-    params = [
-        ("threshold_sigma", 3.0),
-        ("min_sep_range_bins", 4),
-        ("min_sep_doppler_bins", 8),
-        ("max_scatterers", 12),
-    ]
-    out_params = {}
-    for key, default in params:
-        val = seg_kwargs.get(key, default)
-        val = default if val is None else val
-        out_params[key] = val
-    seg_kwargs = out_params
-
     used_bins = set()
     points = []
-    dt = 1.0 / fs
     for seg in segments:
         yb = seg["range_bin"]
         if yb in used_bins:

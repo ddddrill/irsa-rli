@@ -351,9 +351,8 @@ class DataProcessor(QThread):
         )
         if cr["fallback"]:
             self.progress_message.emit(
-                f"Кросс-масштабирование: Ω̂ = {cr['omega_eff']:.5f} рад/с "
-                f"(истинное ω = {self.omega:.5f}), R² = {cr['r2']:.2f}, "
-                f"N = {cr['n_used']} точек [fallback → cfg]"
+                "Кросс-масштабирование: оценка недостоверна, "
+                f"N = {cr['n_used']} точек [fallback → cfg-ось]"
             )
             return azimuth_axis_cfg
         omega_eff = cr["omega_eff"]
