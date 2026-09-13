@@ -65,7 +65,12 @@ def _marginal_scale(N, nperseg, window):
 SCALE = _marginal_scale(256, 128, "hann")
 
 
-def _even_nperseg(nperseg):
+def _even_nperseg(nperseg, N=None):
+    if N is not None:
+        nperseg = min(nperseg, N)
+        if nperseg % 2 == 1:
+            nperseg = max(2, nperseg - 1)
+        return int(nperseg)
     return nperseg if nperseg % 2 == 0 else nperseg + 1
 
 
@@ -97,10 +102,10 @@ def stft_spectrogram(x, fs=1.0, nperseg=None, noverlap=None,
     if nperseg is None:
         nperseg = max(4, N // 8)
     nperseg = _even_nperseg(int(nperseg))
+    if nperseg > N:
+        nperseg = _even_nperseg(nperseg, N)
     if noverlap is None:
         noverlap = int(round(0.75 * nperseg))
-    if nperseg > N:
-        nperseg = _even_nperseg(N)
     w = get_weighting(window, nperseg)
 
     f, t, Z = signal.stft(x, fs=fs, window=w, nperseg=nperseg,
@@ -246,7 +251,7 @@ def rid_cube(P_comp, fs=1.0, n_frames=16, nperseg=None, window="hann",
         nperseg = max(4, N // 8)
     nperseg = _even_nperseg(int(nperseg))
     if nperseg > N:
-        nperseg = _even_nperseg(N)
+        nperseg = _even_nperseg(nperseg, N)
     hop = max(1, int(hop))
 
     # --- бюджет памяти ---
@@ -342,11 +347,12 @@ def wigner_ville(x, fs=1.0):
     """Распределение Вигнера-Вилле комплексного сигнала (WVD).
 
     WVD(t, f) = FFT_τ[ s(t+τ/2)·s*(t−τ/2) ] — реализация через lag-матрицу
-    (N×N) и FFT по оси лагов, O(N^2) память [TF, гл.2]. Дискретизация требует
-    лагов τ, кратных 2Δt («even-lag» схема, см. §7.4.5): частота отображается
-    как f_k = k·fs/(2N) (односторонняя ось [0, fs/2)). Перед расчётом берётся
-    аналитический сигнал (анти-алиасинг по частоте). Кросс-термы — свойство
-    билинейных распределений, а не ошибка (тест документирует).
+    (N×N) и FFT по оси лагов, O(N^2) память [TF, гл.2]. Дискретизация по
+    целым лагам (полный лаг-набор): частота отображается как f_k = k·fs/(2N),
+    ось [0, fs/2). Перед расчётом берётся аналитический сигнал
+    (scipy.signal.hilbert для вещественного входа) — анти-алиасинг по частоте.
+    Кросс-термы — свойство билинейных распределений, а не ошибка
+    (тест документирует).
 
     Args:
         x: сигнал, длина N (комплексный или вещественный).

@@ -211,3 +211,14 @@ def test_determinism():
     r2 = rid_cube(P, fs=1.0, nperseg=64)
     assert np.array_equal(r1["Q_mag"], r2["Q_mag"])
     assert np.array_equal(r1["frame_idx"], r2["frame_idx"])
+
+
+# --------------------------------------- 8. Guard nperseg при нечётном N
+def test_odd_n_nperseg_guard():
+    """nperseg > N при нечётном N не падает (чётный nperseg <= N)."""
+    rng = np.random.default_rng(11)
+    x = (rng.normal(size=129) + 1j * rng.normal(size=129)).astype(np.complex128)
+    rid = rid_cube(x[None, :], fs=1.0, nperseg=256)
+    assert rid["Q_mag"].shape[1] == 128         # nperseg = 128 (чётное <= 129)
+    st = stft_spectrogram(x, fs=1.0, nperseg=256)
+    assert st["Z"].shape[0] == 128              # nperseg = 128, fftshift
