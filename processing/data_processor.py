@@ -402,7 +402,10 @@ class DataProcessor(QThread):
             self.progress_message.emit("Keystone-коррекция миграции ячеек...")
             E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
             E_ks = keystone_transform(E_comp, f_r, self.f_c)
-            P_proc = range_compress(E_ks, f_r, R0=self.range_m,
+            # E_comp уже дерамплен MOCOMP-блоком: повторный дерамп R0 = 0.0
+            # (без повторной опорной дальности) — иначе двойной дерамп
+            # смещает пики (ревью R6-integration: +9.1 м вместо +5.2 м).
+            P_proc = range_compress(E_ks, f_r, R0=0.0,
                                     window=self.range_window,
                                     window_param=self.window_param)[0]
 
@@ -643,7 +646,10 @@ class DataProcessor(QThread):
             self.progress_message.emit("Keystone-коррекция миграции ячеек...")
             E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
             E_ks = keystone_transform(E_comp, f_r, self.f_c)
-            P_proc = range_compress(E_ks, f_r, R0=self.range_m,
+            # E_comp уже дерамплен MOCOMP-блоком: повторный дерамп R0 = 0.0
+            # (без повторной опорной дальности) — иначе двойной дерамп
+            # смещает пики (ревью R6-integration: +9.1 м вместо +5.2 м).
+            P_proc = range_compress(E_ks, f_r, R0=0.0,
                                     window=self.range_window,
                                     window_param=self.window_param)[0]
 

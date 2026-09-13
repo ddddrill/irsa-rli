@@ -19,7 +19,7 @@ import os
 
 import numpy as np
 import pytest
-from scipy.fft import fft, fftshift, ifft, ifftshift
+from scipy.fft import fft, ifftshift
 
 from processing.keystone import keystone_transform
 from processing.range_compress import range_compress

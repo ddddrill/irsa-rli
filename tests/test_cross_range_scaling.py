@@ -139,6 +139,7 @@ class TestFallbackOnNoise:
     UK = [-2, -1, 0, 1, 2]
 
     def test_fallback_or_degraded(self):
+        np.random.seed(0)   # add_complex_awgn использует глобальный RNG
         cr, wt = _e2e_pipeline(N=64, rk=self.RK, uk=self.UK, snr_db=-5.0)
         if cr["fallback"]:
             return  # acceptable
