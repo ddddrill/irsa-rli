@@ -71,6 +71,7 @@ class DataProcessor(QThread):
                  target_model="точечная", omega_axis_y=0.0, omega_axis_z=0.0,
                  precession_rate=0.0, precession_angle_deg=0.0,
                  tf_enabled=False, tf_n_frames=16, tf_window="hann",
+                 cross_range_scaling="off",
                  satellite=None):
         super().__init__()
         self.filename = filename
@@ -116,6 +117,8 @@ class DataProcessor(QThread):
         self.tf_enabled = tf_enabled
         self.tf_n_frames = tf_n_frames
         self.tf_window = tf_window
+        # R3 кросс-масштабирование по данным: "off" (дефолт, как раньше) / "auto"
+        self.cross_range_scaling = cross_range_scaling
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -316,6 +319,51 @@ class DataProcessor(QThread):
             )
         return self._compute_isar_standard(E, f_r, target, display_mode)
 
+    def azimuth_compress(self, P_proc, window="none"):
+        """Помощник: спектральное сжатие по азимуту + шкалирование осей.
+
+        Returns:
+            I: комплексное изображение M×N.
+            azimuth_axis: ось азимута (м).
+            doppler_axis: доплеровская ось (Гц), использованная для
+                формирования изображения.
+        """
+        I, azimuth_axis, doppler_axis = azimuth_compress(
+            P_proc, self.omega, self.f_c, pri=self.pri, window=window,
+            window_param=self.window_param,
+        )
+        return I, azimuth_axis, doppler_axis
+
+    def _maybe_cross_range_scale(self, I, range_axis, doppler_axis, azimuth_axis_cfg):
+        """R3: кросс-масштабирование по данным (chirp-rate) при auto.
+
+        Метод "phasefit" выбран как основной для разрежённых сцен после
+        автофокусировки: устойчив к низкому С/Ш строк и к смещению
+        опорного рассеивателя (перехватывается точкой пересечения b).
+        При fallback возвращается конфигурационная ось азимута.
+        """
+        from processing.cross_range_scaling import cross_range_scale
+
+        self.progress_message.emit("Кросс-масштабирование по данным (chirp-rate)...")
+        fs = 1.0 / self.pri
+        cr = cross_range_scale(
+            I, range_axis, doppler_axis, self.f_c, fs, method="phasefit",
+        )
+        if cr["fallback"]:
+            self.progress_message.emit(
+                f"Кросс-масштабирование: Ω̂ = {cr['omega_eff']:.5f} рад/с "
+                f"(истинное ω = {self.omega:.5f}), R² = {cr['r2']:.2f}, "
+                f"N = {cr['n_used']} точек [fallback → cfg]"
+            )
+            return azimuth_axis_cfg
+        omega_eff = cr["omega_eff"]
+        self.progress_message.emit(
+            f"Кросс-масштабирование: Ω̂ = {omega_eff:.5f} рад/с "
+            f"(истинное ω = {self.omega:.5f}), R² = {cr['r2']:.2f}, "
+            f"N = {cr['n_used']} точек"
+        )
+        return cr["azimuth_axis_m"]
+
     def _compute_isar_standard(self, E, f_r, target, display_mode):
         """Стандартный конвейер: 1D range + 1D azimuth."""
         if self.pri <= 0:
@@ -384,10 +432,16 @@ class DataProcessor(QThread):
 
         # 4. Азимутальное сжатие
         self.progress_message.emit("Азимутальное сжатие...")
-        I, azimuth_axis, _ = azimuth_compress(
+        I, azimuth_axis, doppler_axis = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,
             window_param=self.window_param,
         )
+        # 4b. Кросс-масштабирование по данным (R3): только при "auto",
+        #     off = битовая совместимость с прежним конвейером.
+        if self.cross_range_scaling == "auto":
+            azimuth_axis = self._maybe_cross_range_scale(
+                I, range_axis, doppler_axis, azimuth_axis,
+            )
         amplitude = compute_amplitude(I, mode=display_mode)
         self.isar_ready.emit(amplitude, range_axis, azimuth_axis)
 

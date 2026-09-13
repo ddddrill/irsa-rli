@@ -699,6 +699,18 @@ class MainWindow(QMainWindow):
         self.pg_isar.getPlotItem().getViewBox().addItem(self.isar_img)
 
         layout.addWidget(self.pg_isar)
+
+        # R3: кросс-масштабирование по данным (chirp-rate)
+        self.chk_cross_scale = QCheckBox("Кросс-масштабирование по данным (chirp-rate)")
+        self.chk_cross_scale.setChecked(self.cfg.cross_range_scaling == "auto")
+        self.chk_cross_scale.setToolTip(
+            "Оценка эффективной угловой скорости Omega_eff по линейному тренду "
+            "чирпа вдоль кросс-дальности; ось азимута перемасштабируется в метры. "
+            "Off = прежний конвейер (битовая совместимость)."
+        )
+        self.chk_cross_scale.stateChanged.connect(self._on_config_changed)
+        layout.addWidget(self.chk_cross_scale)
+
         return widget
 
     def _build_tf_tab(self):
@@ -891,6 +903,9 @@ class MainWindow(QMainWindow):
         self.cfg.display_mode = self.cb_display.currentText()
         self.cfg.snr_db = self._safe_float(self.le_snr[1], self.cfg.snr_db)
 
+        # R3: кросс-масштабирование по данным (chirp-rate)
+        self.cfg.cross_range_scaling = "auto" if self.chk_cross_scale.isChecked() else "off"
+
         # Реализм
         self.cfg.realism_preset = self.cb_realism_preset.currentText()
         self.cfg.use_complex_sigma = self.chk_complex_sigma.isChecked()
@@ -998,6 +1013,7 @@ class MainWindow(QMainWindow):
             tf_enabled=self.cfg.tf_enabled,
             tf_n_frames=self.cfg.tf_n_frames,
             tf_window=self.cfg.tf_window,
+            cross_range_scaling=self.cfg.cross_range_scaling,
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -1305,6 +1321,7 @@ class MainWindow(QMainWindow):
             omega_axis_z=self.cfg.omega_axis_z,
             precession_rate=self.cfg.precession_rate,
             precession_angle_deg=self.cfg.precession_angle_deg,
+            cross_range_scaling=self.cfg.cross_range_scaling,
             save_dir=save_dir,
             mode="stream",
         )

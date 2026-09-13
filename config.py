@@ -65,6 +65,9 @@ class AppConfig:
     tf_n_frames: int = 16               # число RID-кадров куба (16–32, [TF, §5.3])
     tf_window: str = "hann"             # окно STFT/RID (processing.windows.WINDOW_NAMES)
 
+    # Кросс-масштабирование по данным (chirp-rate): off / auto
+    cross_range_scaling: str = "off"    # off = без изменений конвейера; auto = заменить ось азимута оценкой Omega_eff
+
     # Эффекты реализма (все выключены = классическая модель)
     realism_preset: str = "Идеальный"   # Идеальный / Реалистичный / Пользовательский
     seed: int = 42                      # базовый seed генераторов случайности
