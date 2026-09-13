@@ -155,7 +155,7 @@ def run(verbose=True, out_path=DEFAULT_OUT):
 
     T = m["T"]
     lam = m["lam"]
-    rad = 0.01 * T + 0.5 * 2e-4 * T ** 2.0
+    rad = m["omega"] * T + 0.5 * m["gamma"] * T ** 2.0
     if verbose:
         print("=" * 62)
         print("  МАНЕВРИРУЮЩАЯ ЦЕЛЬ: RD vs STFT vs RID-кадр (gamma != 0)")
