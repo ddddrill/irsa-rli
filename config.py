@@ -67,6 +67,7 @@ class AppConfig:
 
     # Кросс-масштабирование по данным (chirp-rate): off / auto
     cross_range_scaling: str = "off"    # off = без изменений конвейера; auto = заменить ось азимута оценкой Omega_eff
+    use_keystone: bool = False          # keystone-коррекция миграции ячеек дальности (C&M, §5.5); False = битовая идентичность
 
     # Эффекты реализма (все выключены = классическая модель)
     realism_preset: str = "Идеальный"   # Идеальный / Реалистичный / Пользовательский

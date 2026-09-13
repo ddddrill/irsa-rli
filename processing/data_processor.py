@@ -72,6 +72,7 @@ class DataProcessor(QThread):
                  precession_rate=0.0, precession_angle_deg=0.0,
                  tf_enabled=False, tf_n_frames=16, tf_window="hann",
                  cross_range_scaling="off",
+                 use_keystone=False,
                  satellite=None):
         super().__init__()
         self.filename = filename
@@ -119,6 +120,8 @@ class DataProcessor(QThread):
         self.tf_window = tf_window
         # R3 кросс-масштабирование по данным: "off" (дефолт, как раньше) / "auto"
         self.cross_range_scaling = cross_range_scaling
+        # R6 keystone-перешкалирование: False (дефолт) = битовая идентичность
+        self.use_keystone = use_keystone
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -388,6 +391,21 @@ class DataProcessor(QThread):
             self.mocomp_phase_ready.emit(np.zeros(self.num_pulses))
             self.mocomp_before_after.emit(P_abs, P_abs, range_axis)
 
+        # 3a. Keystone-коррекция вращательной миграции ячеек (R6, C&M §5.5):
+        #     только по флагу (дефолт off = ни одной строки пути не меняется).
+        #     Гибрид §9.4 п.2: после MOCOMP возврат в E-область
+        #     (E = fft(ifftshift(P))), keystone-перешкалирование медленного
+        #     времени t_ks = (f_c/f_r)·t, повторное сжатие дальности
+        #     (двойное сжатие — приемлемо, флаг выключен по умолчанию).
+        if self.use_keystone:
+            from processing.keystone import keystone_transform
+            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
+            E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
+            E_ks = keystone_transform(E_comp, f_r, self.f_c)
+            P_proc = range_compress(E_ks, f_r, R0=self.range_m,
+                                    window=self.range_window,
+                                    window_param=self.window_param)[0]
+
         # 3b. TF-анализ (вкладка «Сигнатуры»): RID-куб и спектрограммы топ-K
         #     бинов — только по включённому флагу (дефолт off = без изменений).
         #     P_proc уже выровнен MOCOMP-блоком; сигнал эмитится один раз.
@@ -616,6 +634,18 @@ class DataProcessor(QThread):
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
         else:
             P_proc = P.astype(np.complex128)
+
+        # Keystone-коррекция (R6, C&M §5.5): режим потока кадров, тот же
+        # гибрид MOCOMP → E = fft(ifftshift(P)) → keystone → range_compress.
+        # Дефолт off — путь кадра не меняется.
+        if self.use_keystone:
+            from processing.keystone import keystone_transform
+            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
+            E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
+            E_ks = keystone_transform(E_comp, f_r, self.f_c)
+            P_proc = range_compress(E_ks, f_r, R0=self.range_m,
+                                    window=self.range_window,
+                                    window_param=self.window_param)[0]
 
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,

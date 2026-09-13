@@ -174,4 +174,5 @@ python -m examples.test_data_processor_polar
 | demo_large_angle | 0 | — | 15° | стандартный + полярный | Arc smearing vs k-space |
 | demo_polar_reformatting_validation | 0 | — | 15° | наивный / полярный | 3 графика сравнения |
 | demo_maneuvering_target | 0 | — | 8.3°+γ | стандартный + STFT + RID | Чирп, smear vs RID-мгновенный снимок |
+| demo_keystone | 0 | — | 14.7° | стандартный RD + keystone (§9.5 стенд) | Миграция 8.5 dr ⇒ фокус (до/после) |
 | test_data_processor_polar | 0 | выкл | 15° | оба | Автотест с метриками |

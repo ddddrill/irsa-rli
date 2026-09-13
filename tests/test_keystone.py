@@ -15,7 +15,10 @@ PRI = 0.05 с (T = 12.8 с), ω = 0.02 рад/с, точечный рассеи�
 самого интерполятора (с нулевой приставкой она была бы замаскирована
 модельным полом ~4e-2 — см. report R6-core).
 """
+import os
+
 import numpy as np
+import pytest
 from scipy.fft import fft, fftshift, ifft, ifftshift
 
 from processing.keystone import keystone_transform
@@ -159,3 +162,35 @@ def test_translational_case_documented():
     assert peak_hybrid > 3.0 * peak_alone, \
         f"hybrid {peak_hybrid:.2f} not > 3x alone {peak_alone:.2f}"
     assert compute_image_entropy(I_hybrid) < compute_image_entropy(I_alone)
+
+
+def test_disabled_is_bitwise_identical():
+    """§9.6.4: use_keystone=False — битовая идентичность прежнему конвейеру.
+
+    Интеграционный инвариант: DataProcessor с флагом use_keystone=False
+    (как и конструкция без этого параметра — дефолт False) выдаёт битово
+    то же комплексное изображение I и амплитуду, что и «старый» конвейер.
+    Сравнение — np.array_equal на комплексном I (не только амплитуда), по
+    мотиву bitwise-тестов test_cross_range_scaling/test_tf_gui.
+    """
+    pytest.importorskip("PyQt5")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from processing.data_processor import DataProcessor
+
+    common = dict(
+        filename="matrices/matrices_solarB_high.pkl",
+        method="стандартный",
+        f_c=8.0, Xmax=20.0, Ymax=20.0, spectr_w=0.5,
+        ang=9.0, range_m=500000.0, nifft_size=256,
+        V=0.0, alpha=0.0, omega=0.004, pri=0.01,
+        num_pulses=128, use_mocomp=True, window="none",
+    )
+    proc_def = DataProcessor(**common)
+    proc_off = DataProcessor(**common, use_keystone=False)
+
+    E, f_r, target = proc_def.generate_raw_data()
+    I1, amp1, ra1, az1, _ = proc_def._compute_isar_standard(E, f_r, target, "dB")
+    I2, amp2, ra2, az2, _ = proc_off._compute_isar_standard(E, f_r, target, "dB")
+
+    assert np.array_equal(I1, I2), "комплексное I различается при use_keystone=False"
+    assert np.array_equal(amp1, amp2), "амплитуда различается при use_keystone=False"
