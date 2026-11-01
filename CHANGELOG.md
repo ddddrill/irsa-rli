@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+### G2: AWGN из seeded RNG — воспроизводимость при любом SNR
+
+`simulation/raw_generator.py`: `add_complex_awgn` принимает источник случайности
+`rng: np.random.Generator`; `generate_raw_matrix` передаёт
+`spawn_rng(seed, "awgn")`. Дефект (ревью E3/F3): шум брался из глобального
+`np.random.randn`, минуя систему `spawn_rng`, — два вызова с одним seed при
+SNR < ∞ давали разные матрицы, обещание README «один seed — побитово одинаковый
+результат» было ложью при любом конечном SNR.
+
+- Приёмка: seed=42, SNR=15 дБ, два прогона → `np.array_equal` **True** (было
+  False); разные seed → различаются; SNR=∞ → побитово как прежде.
+- Изоляция: включение `use_phase_noise` не меняет реализацию шума (подгенератор
+  «awgn» независим по построению `spawn_rng`).
+- Тесты `tests/test_determinism.py`: 3 → 6 (`test_same_seed_same_matrix_with_noise`,
+  `test_awgn_snr_inf_bitwise`, `test_awgn_isolated_from_other_effects`).
+- README: разделы «Детерминированность» и «Тесты и воспроизводимость» исправлены.
+
 ### F9: полу-биновый сдвиг оси дальности исправлен (физическая корректность)
 
 `processing/range_compress.py` и `processing/polar_reformat.py` (`form_image_2d`):

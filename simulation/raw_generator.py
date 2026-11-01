@@ -59,7 +59,7 @@ class SimEffects:
         ])
 
 
-def add_complex_awgn(E_clean, snr_db):
+def add_complex_awgn(E_clean, snr_db, rng=None):
     """Добавить комплексный аддитивный белый гауссовский шум (Complex AWGN).
 
     Физика шума:
@@ -70,6 +70,10 @@ def add_complex_awgn(E_clean, snr_db):
         E_clean: чистая комплексная матрица M×N.
         snr_db: отношение сигнал/шум в децибелах.
                  np.inf — вернуть чистый сигнал без шума.
+        rng: источник случайности (np.random.Generator) из spawn_rng(seed,
+             "awgn") — даёт побитовую воспроизводимость при любом SNR.
+             None — np.random.default_rng() (только для внешних вызовов;
+             основной путь — generate_raw_matrix передаёт seeded-генератор).
 
     Returns:
         E_noisy: зашумленная матрица M×N.
@@ -83,7 +87,9 @@ def add_complex_awgn(E_clean, snr_db):
     P_noise = P_signal / SNR_lin
 
     M, N = E_clean.shape
-    N_raw = np.random.randn(M, N) + 1j * np.random.randn(M, N)
+    if rng is None:
+        rng = np.random.default_rng()
+    N_raw = rng.standard_normal((M, N)) + 1j * rng.standard_normal((M, N))
 
     N_scaled = np.sqrt(P_noise / 2.0) * N_raw
 
@@ -213,6 +219,9 @@ def generate_raw_matrix(radar, target, effects=None):
         phn = phase_noise_process(N, eff.phase_noise_std_deg, eff.seed)
         E_clean = E_clean * np.exp(1j * phn)[np.newaxis, :]
 
-    E_noisy = add_complex_awgn(E_clean, radar.snr_db)
+    # Шум из seeded-подгенератора "awgn" (изоляция от других эффектов,
+    # побитовая воспроизводимость при повторном прогоне с тем же seed).
+    E_noisy = add_complex_awgn(E_clean, radar.snr_db,
+                               rng=spawn_rng(eff.seed, "awgn"))
 
     return E_noisy, f_r
