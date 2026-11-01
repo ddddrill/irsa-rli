@@ -1061,7 +1061,11 @@ class MainWindow(QMainWindow):
         vb = self.pg_range.getPlotItem().getViewBox()
         vb.enableAutoRange()
         vb.updateAutoRange()
-        self.tabs.setTabText(1, f"Профили дальности (Δr={dr:.3f} м)")
+        # При включённом keystone профили рассчитаны ПОСЛЕ коррекции (F6:
+        # keystone на сырых E до сжатия) — отражаем в подписи вкладки.
+        suffix = " (после keystone)" if (getattr(self.processor, "use_keystone",
+                                          False) if self.processor is not None else False) else ""
+        self.tabs.setTabText(1, f"Профили дальности{suffix} (Δr={dr:.3f} м)")
         self.tabs.setCurrentIndex(1)
 
     def _on_mocomp_envelope(self, shifts, num_pulses):

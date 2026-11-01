@@ -388,13 +388,31 @@ class DataProcessor(QThread):
             raise ValueError(
                 f"PRI = {self.pri} с должно быть > 0 для азимутального сжатия"
             )
-        # 2. Сжатие по дальности
+        # 3a. Keystone-коррекция вращательной миграции ячеек (R6→F6, C&M §5.5):
+        #     ПЕРВЫМ, на сырых E — нетронутая f×t-структура фазы
+        #     (t_ks = (f_c/f_r)·t). Только по флагу (дефолт off = битовая
+        #     идентичность пути). Измерение (План фиксов §6.2, стенды
+        #     R/E2/T/K): это единственный порядок, дающий выигрыш —
+        #     прежний гибрид «после MOCOMP» был нейтрален (×0.99) и
+        #     разрушал per-импульсные фазы, «запечённые» MOCOMP/выравниванием
+        #     в E-область (нелинейная (m,j)-фаза); порядок
+        #     «envelope → keystone → PPP» измеренно ВРЕДЕН (×0.19–0.56).
+        if self.use_keystone:
+            from processing.keystone import keystone_transform
+            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
+            E = keystone_transform(E, f_r, self.f_c)
+
+        # 2. Сжатие по дальности — ЕДИНСТВЕННЫЙ проход: дерамп R0 (per-
+        #     строчная константа, keystone её не трогает) и окно применяются
+        #     один раз (двойное окно/сжатие прежнего гибрида устранены).
         self.progress_message.emit("Сжатие по дальности...")
         P, P_abs, range_axis, dr = range_compress(E, f_r, R0=self.range_m, window=self.range_window,
                            window_param=self.window_param)
         self.range_profiles_ready.emit(P_abs, range_axis, dr)
 
-        # 3. Компенсация движения (опционально)
+        # 3. Компенсация движения (опционально) — после keystone:
+        #     per-столбцовые операции в P-области не конфликтуют с
+        #     ресемплингом медленного времени.
         if self.use_mocomp:
             self.progress_message.emit("Компенсация движения...")
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
@@ -406,24 +424,6 @@ class DataProcessor(QThread):
             self.mocomp_envelope_ready.emit(np.zeros(self.num_pulses), self.num_pulses)
             self.mocomp_phase_ready.emit(np.zeros(self.num_pulses))
             self.mocomp_before_after.emit(P_abs, P_abs, range_axis)
-
-        # 3a. Keystone-коррекция вращательной миграции ячеек (R6, C&M §5.5):
-        #     только по флагу (дефолт off = ни одной строки пути не меняется).
-        #     Гибрид §9.4 п.2: после MOCOMP возврат в E-область
-        #     (E = fft(ifftshift(P))), keystone-перешкалирование медленного
-        #     времени t_ks = (f_c/f_r)·t, повторное сжатие дальности
-        #     (двойное сжатие — приемлемо, флаг выключен по умолчанию).
-        if self.use_keystone:
-            from processing.keystone import keystone_transform
-            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
-            E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
-            E_ks = keystone_transform(E_comp, f_r, self.f_c)
-            # E_comp уже дерамплен MOCOMP-блоком: повторный дерамп R0 = 0.0
-            # (без повторной опорной дальности) — иначе двойной дерамп
-            # смещает пики (ревью R6-integration: +9.1 м вместо +5.2 м).
-            P_proc = range_compress(E_ks, f_r, R0=0.0,
-                                    window=self.range_window,
-                                    window_param=self.window_param)[0]
 
         # 3b. TF-анализ (вкладка «Сигнатуры»): RID-куб и спектрограммы топ-K
         #     бинов — только по включённому флагу (дефолт off = без изменений).
@@ -646,6 +646,14 @@ class DataProcessor(QThread):
 
     def _standard_frame(self, E_partial, f_r):
         """Обработать один кадр стандартным методом (1D + 1D)."""
+        # Keystone (R6→F6, C&M §5.5) — ПЕРВЫМ, на сырых E: нетронутая f×t-
+        # структура фазы (см. _compute_isar_standard §6.3 и измерение плана
+        # §6.2: порядки «после MOCOMP» / «envelope → keystone» вредны).
+        if self.use_keystone:
+            from processing.keystone import keystone_transform
+            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
+            E_partial = keystone_transform(E_partial, f_r, self.f_c)
+
         P, P_abs, range_axis, dr = range_compress(E_partial, f_r, R0=self.range_m, window=self.range_window,
                            window_param=self.window_param)
 
@@ -653,21 +661,6 @@ class DataProcessor(QThread):
             P_proc, shifts, ref_bin, phase_errors = mocomp(P, range_axis)
         else:
             P_proc = P.astype(np.complex128)
-
-        # Keystone-коррекция (R6, C&M §5.5): режим потока кадров, тот же
-        # гибрид MOCOMP → E = fft(ifftshift(P)) → keystone → range_compress.
-        # Дефолт off — путь кадра не меняется.
-        if self.use_keystone:
-            from processing.keystone import keystone_transform
-            self.progress_message.emit("Keystone-коррекция миграции ячеек...")
-            E_comp = np.fft.fft(np.fft.ifftshift(P_proc, axes=0), axis=0)
-            E_ks = keystone_transform(E_comp, f_r, self.f_c)
-            # E_comp уже дерамплен MOCOMP-блоком: повторный дерамп R0 = 0.0
-            # (без повторной опорной дальности) — иначе двойной дерамп
-            # смещает пики (ревью R6-integration: +9.1 м вместо +5.2 м).
-            P_proc = range_compress(E_ks, f_r, R0=0.0,
-                                    window=self.range_window,
-                                    window_param=self.window_param)[0]
 
         I, azimuth_axis, _ = azimuth_compress(
             P_proc, self.omega, self.f_c, pri=self.pri, window=self.window,
