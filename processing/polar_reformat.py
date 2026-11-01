@@ -674,8 +674,11 @@ def form_image_2d(E_k_space, dkx, dky):
     x_span = 2.0 * np.pi / dkx
     y_span = 2.0 * np.pi / dky
 
-    x_axis = (np.arange(M) - (M - 1) / 2.0) * (x_span / M)
-    y_axis = (np.arange(N) - (N - 1) / 2.0) * (y_span / N)
+    # Та же конвенция центрирования, что и в range_compress/azimuth_compress:
+    # DC в индексе M//2 (N//2) после fftshift — ноль оси обязан быть там же.
+    # Прежнее (M-1)/2 смещало все позиции на +dr/2 (полбина) при чётном M/N.
+    x_axis = (np.arange(M) - M // 2) * (x_span / M)
+    y_axis = (np.arange(N) - N // 2) * (y_span / N)
 
     return I_complex, x_axis, y_axis, x_span, y_span
 

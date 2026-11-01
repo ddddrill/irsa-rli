@@ -55,6 +55,11 @@ def range_compress(E, f_r, R0=0.0, window="none", window_param=None):
     df = B / (M - 1) if M > 1 else B / M
     dr = SPEED_OF_LIGHT / (2.0 * M * df)
 
-    range_axis = (np.arange(M) - (M - 1) / 2.0) * dr
+    # Конвенция fftshift: DC-бин после сдвига оказывается в индексе M//2,
+    # поэтому ноль оси обязан быть в M//2: (arange(M) - M // 2) * dr.
+    # Прежнее (arange(M) - (M-1)/2) смещало все пики на +dr/2 при чётном M
+    # (DC была в индексе M//2, а ноль оси — в (M-1)/2 = M//2 - 1/2).
+    # Эталон конвенции в проекте: azimuth_compress.py (doppler_axis, N//2).
+    range_axis = (np.arange(M) - M // 2) * dr
 
     return P, P_abs, range_axis, dr
