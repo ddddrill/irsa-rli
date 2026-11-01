@@ -70,7 +70,9 @@ def test_warning_emitted_grey_zone_standard():
     proc.progress_message.connect(messages.append)
     proc.compute_isar_notified(display_mode="dB")
 
-    warns = [m for m in messages if m.startswith("WARN: Δθ")]
+    # Ward C4 перенесён в simulation/applicability (G1): тот же физический
+    # порог, формат «WARN (C4): Δθ …» вместо прежнего «WARN: Δθ …».
+    warns = [m for m in messages if m.startswith("WARN (C4)")]
     assert len(warns) == 1, messages
     assert "физический порог 1.24°" in warns[0]  # X-band, L_LOS=20 м
     assert "legacy-порог 3.00°" in warns[0]      # legacy 3° тоже выводится
@@ -93,7 +95,7 @@ def test_no_warning_for_polar_method():
     proc.progress_message.connect(messages.append)
     proc.compute_isar_notified(display_mode="dB")
 
-    assert not any(m.startswith("WARN: Δθ") for m in messages)
+    assert not any(m.startswith("WARN (C4)") for m in messages)
 
 
 def test_no_warning_below_physical_threshold():
@@ -112,5 +114,8 @@ def test_no_warning_below_physical_threshold():
     proc.progress_message.connect(messages.append)
     proc.compute_isar_notified(display_mode="dB")
 
-    WARN = [m for m in messages if m.startswith("WARN")]
-    assert WARN == [], WARN
+    # Δθ = 1° < порога 1.24°: C4-предупреждения нет. Конфигурация при этом
+    # остаётся невалидной по C1a/C1b/C2 (N=16, PRI=1, survey=20) — guard G1
+    # честно ругается на них; проверяем отсутствие именно C4.
+    C4 = [m for m in messages if m.startswith("WARN (C4)")]
+    assert C4 == [], messages

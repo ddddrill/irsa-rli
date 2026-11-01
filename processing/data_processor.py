@@ -9,6 +9,11 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from models.radar import Radar
 from models.target import Target
 from simulation.raw_generator import generate_raw_matrix, SimEffects
+from simulation.applicability import (
+    check_applicability,
+    format_report,
+    hard_failures,
+)
 from processing.range_compress import range_compress
 from processing.mocomp import mocomp
 from processing.azimuth_compress import azimuth_compress, compute_amplitude
@@ -22,8 +27,6 @@ from processing.polar_reformat import (
     compute_amplitude_db,
     compute_image_entropy,
     should_use_polar_reformat,
-    polar_threshold_deg,
-    LEGACY_THRESHOLD_DEG,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +76,7 @@ class DataProcessor(QThread):
                  tf_enabled=False, tf_n_frames=16, tf_window="hann",
                  cross_range_scaling="off",
                  use_keystone=False,
+                 enforce=False,
                  satellite=None):
         super().__init__()
         self.filename = filename
@@ -122,6 +126,11 @@ class DataProcessor(QThread):
         self.cross_range_scaling = cross_range_scaling
         # R6 keystone-перешкалирование: False (дефолт) = битовая идентичность
         self.use_keystone = use_keystone
+        # Guard'ы применимости (G1): default False = только сообщения WARN
+        # («ОШИБКА КОНФИГУРАЦИИ»/«WARN:» через progress_message), расчёт не
+        # блокируется. enforce=True — программный API: hard-нарушения
+        # (C1a, C2) прерывают расчёт исключением ValueError.
+        self.enforce = enforce
         if omega is not None and omega > 0:
             self.omega = omega
         else:
@@ -301,25 +310,32 @@ class DataProcessor(QThread):
         E, f_r, target = self.generate_raw_data()
         self.signal_data_ready.emit(E, f_r)
 
+        # 1a. Guard'ы применимости (G1, C1a/C1b/C2/C3/C4/VIB/WALK): эмпирика
+        #     по точной кинематике — без блокировки расчёта (инвариант
+        #     совместимости с GUI). Сообщения модуля самодостаточны:
+        #     hard (C1a, C2) начинаются с «ОШИБКА КОНФИГУРАЦИИ (C…): …»,
+        #     warn — с «WARN (C…): …».
+        checks = check_applicability(self.radar, target)
+        if self.method == "с полярным переформатированием":
+            # C4 (порог малых углов) актуален только для стандартного RD-
+            # тракта; полярная переформатизация большое Δθ как раз и
+            # обрабатывает (семантика прежнего диагностического блока).
+            checks = [c for c in checks if c.code != "C4"]
+        for c in checks:
+            if c.ok or math.isinf(c.margin):
+                continue
+            self.progress_message.emit(c.message)
+            logger.warning("%s", c.message)
+        if self.enforce:
+            failed = hard_failures(checks)
+            if failed:
+                raise ValueError(
+                    "Невалидная конфигурация (enforce=True): "
+                    + "; ".join(c.message for c in failed))
+
         if self.method == "с полярным переформатированием":
             return self._compute_isar_polar(E, f_r, target, display_mode)
 
-        # Диагностика: физический порог применимости малой угловой аппроксимации
-        # C&M, §3.1: Δθ_max ≈ √(λ/L_LOS)/2 с λ = c/f_c и L_LOS ≈ self.Xmax.
-        # Только предупреждение — метод по-прежнему выбирает пользователь.
-        wavelength = SPEED_OF_LIGHT / self.f_c
-        delta_theta_deg = math.degrees(
-            self.omega * self.num_pulses * self.pri
-        )
-        physical_threshold_deg = polar_threshold_deg(wavelength, self.Xmax)
-        if (physical_threshold_deg is not None
-                and delta_theta_deg > physical_threshold_deg):
-            self.progress_message.emit(
-                f"WARN: Δθ = {delta_theta_deg:.2f}° > физический порог "
-                f"{physical_threshold_deg:.2f}° (C&M §3.1) — рекомендуется метод "
-                f"с полярным переформатированием "
-                f"(legacy-порог {LEGACY_THRESHOLD_DEG:.2f}°)"
-            )
         return self._compute_isar_standard(E, f_r, target, display_mode)
 
     def azimuth_compress(self, P_proc, window="none"):
