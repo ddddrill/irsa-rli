@@ -31,8 +31,10 @@ class AppConfig:
     spectrum_width: float = 0.5         # ГГц
     nifft_size: int = 1024              # размер FFT (степень 2)
     beam_width: float = 9.0             # град
-    survey_length: float = 20.0         # м
-    survey_width: float = 20.0          # м
+    survey_length: float = 40.0         # м (окно однозначности ±c/(4Δf) = ±20.1 м
+                                        # при Nf=134; must cover max|δR| цели с
+                                        # запасом ≥1.2 — см. PARAMETERS_GUIDE)
+    survey_width: float = 40.0          # м
     satellite: str = "solarB"
     range_km: float = 500.0             # дальность до объекта, км
 

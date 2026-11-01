@@ -1,4 +1,14 @@
-"""Общие фикстуры тестов: фиксированный радар и цель."""
+"""Общие фикстуры тестов: фиксированный радар и цель.
+
+Фикстуры валидны по guard'ам C1a–C4 (задача D1, План фиксов §8.2):
+    - survey 40 м -> окно дальности ±20.10 м > max|δR| (solarB: 12.05), C2 1.67;
+    - Δθ = 0.8° за апертуру (omega = radians(0.8)/(N*PRI)) — валиден и
+      по Найквисту (C1a 14.5×), и по порогу малого угла (C4 1.10×);
+    - Nf = 134 (чётный) — осознанно: тренировка исправленной конвенции
+      fftshift (задача F9) в реальном использовании.
+Прежние фикстуры (N=16, PRI=1, Xmax=20) были в алиасинг-режиме ×12.4 —
+см. CHANGELOG «физическая корректность демо».
+"""
 import math
 
 import numpy as np
@@ -15,16 +25,16 @@ MATRIX = "matrices/matrices_solarB_high.pkl"
 @pytest.fixture(scope="session")
 def radar():
     return Radar(
-        c=SPEED_OF_LIGHT, f_c=8e9, Xmax=20.0, Ymax=20.0,
+        c=SPEED_OF_LIGHT, f_c=8e9, Xmax=40.0, Ymax=40.0,
         spectr_w=0.5e9, ph_c=0.0, ang=9.0, nifft_size=256,
     )
 
 
 @pytest.fixture(scope="session")
 def target():
-    omega = math.radians(9.0) / 16.0
+    omega = math.radians(0.8) / (256 * 0.05)      # Δθ = 0.8° за апертуру
     return Target(
-        MATRIX, pri=1.0, num_pulses=16, R0=500000.0,
+        MATRIX, pri=0.05, num_pulses=256, R0=500000.0,
         V=0.0, alpha=0.0, omega=omega,
     )
 

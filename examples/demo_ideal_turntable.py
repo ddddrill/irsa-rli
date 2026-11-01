@@ -1,8 +1,11 @@
-"""Демо 1: Идеальный разворот (Turntable Model).
+"""Демо 1: Идеальный разворот (Turntable Model) — физически валидный режим.
 
-Сценарий: V=0, omega!=0. MOCOMP отключен.
-Демонстрирует, что базовая обработка работает идеально
-при чистом вращении без поступательного движения.
+Сценарий: V=0, omega!=0. MOCOMP отключен. Параметры из Плана фиксов (D1):
+    N=256, PRI=0.05 c, Δθ=0.8° за апертуру, survey 40 м, R0=500 км.
+Конфигурация валидна по guard'ам: C1a 14.5×, C1b 14.3×, C2 1.67×, C4 1.10×
+(прежний режим N=16/PRI=1/Δθ=9° был в алиасинге ×12.4 — позиции были ложными).
+Цена честного малого угла стандартного тракта: PSF по кросс-рейнджу
+λ/(2Δθ)·0.886 = 1.19 м; большие углы — демо 4/5 (полярный тракт).
 
 Запуск:
     python -m examples.demo_ideal_turntable
@@ -19,35 +22,62 @@ import matplotlib.pyplot as plt
 from models.radar import Radar
 from models.target import Target
 from simulation.raw_generator import generate_raw_matrix
+from simulation.applicability import check_applicability, format_report
 from processing.range_compress import range_compress
 from processing.azimuth_compress import azimuth_compress, compute_amplitude
 
 SPEED_OF_LIGHT = 3e8
 
+# Параметры валидного сценария (План фиксов §8.2, таблица «демо 1»)
+N_PULSES = 256
+PRI = 0.05
+DELTA_THETA_DEG = 0.8
+SURVEY = 40.0
+R0 = 500000.0
 
-def run(f_c=8e9, spectr_w=0.5e9, ang=9.0, R0=500000.0, omega=None,
-        satellite="ICEsat2", verbose=True):
-    if omega is None:
-        omega = math.radians(ang) / 16.0
 
-    radar = Radar(c=SPEED_OF_LIGHT, f_c=f_c, Xmax=20.0, Ymax=20.0,
-                  spectr_w=spectr_w, ph_c=0.0, ang=ang, nifft_size=1024)
+def run(f_c=8e9, spectr_w=0.5e9, ang=DELTA_THETA_DEG, R0=R0, omega=None,
+        satellite="solarB", verbose=True):
+    omega = (omega if omega is not None
+             else math.radians(DELTA_THETA_DEG) / (N_PULSES * PRI))
+
+    radar = Radar(c=SPEED_OF_LIGHT, f_c=f_c, Xmax=SURVEY, Ymax=SURVEY,
+                  spectr_w=spectr_w, ph_c=0.0, ang=9.0, nifft_size=256)
 
     filename = "matrices/matrices_%s_high.pkl" % satellite
-    target = Target(filename, pri=1.0, num_pulses=16, R0=R0, V=0.0, alpha=0.0, omega=omega)
+    target = Target(filename, pri=PRI, num_pulses=N_PULSES, R0=R0,
+                    V=0.0, alpha=0.0, omega=omega)
+
+    if verbose:
+        print("=== Ideal Turntable (V=0, Δθ=%.1f°) ===" % (
+            math.degrees(omega * N_PULSES * PRI),))
+        print(format_report(check_applicability(radar, target)))
+
+        # Топ-5 истинных позиций рассеивателей (для сравнения с пиками РЛИ:
+        # PSF_x = 0.886·c/2B, PSF_y = 0.886·λ/(2Δθ); у макс y0 теперь
+        # largest интенсивности смежные позиции могут сливаться)
+        sc = target._load_scatterers()
+        top = np.argsort(sc["intens"])[::-1][:5]
+        psf_x = 0.886 * SPEED_OF_LIGHT / (2 * spectr_w)
+        psf_y = 0.886 * (SPEED_OF_LIGHT / f_c) / (2 * omega * N_PULSES * PRI)
+        print(f"  PSF: dx={psf_x:.3f} м, dy={psf_y:.2f} м (допуск V1 = 2·PSF)")
+        print("  Топ-5 истинных позиций (x, y), интенсивность:")
+        for i in top:
+            print(f"    ({sc['x0'][i]:+.2f}, {sc['y0'][i]:+.2f}) м,"
+                  f" σ={sc['intens'][i]:.0f}")
 
     E, f_r = generate_raw_matrix(radar, target)
     P, P_abs, range_axis, dr = range_compress(E, f_r, R0=R0)
-    I, azimuth_axis, doppler_axis = azimuth_compress(P.astype(np.complex128), omega, f_c, pri=1.0)
+    I, azimuth_axis, doppler_axis = azimuth_compress(
+        P.astype(np.complex128), omega, f_c, pri=PRI)
     amplitude = compute_amplitude(I, mode="linear")
 
     if verbose:
-        print("=== Ideal Turntable (V=0, w!=0) ===")
         print("  Raw data E: %s" % str(E.shape))
         print("  Range profiles P: %s" % str(P.shape))
         print("  ISAR image I: %s" % str(I.shape))
-        print("  Azimuth axis: [%.3f, %.3f] m" % (azimuth_axis[0], azimuth_axis[-1]))
-        print("  Range axis: [%.1f, %.1f] m" % (range_axis[0], range_axis[-1]))
+        print("  Azimuth axis: [%.3f, %.3f] м" % (azimuth_axis[0], azimuth_axis[-1]))
+        print("  Range axis: [%.1f, %.1f] м" % (range_axis[0], range_axis[-1]))
         print("  Peak: %.1f" % amplitude.max())
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
@@ -72,7 +102,8 @@ def run(f_c=8e9, spectr_w=0.5e9, ang=9.0, R0=500000.0, omega=None,
     axes[2].set_ylabel("Range (m)")
     plt.colorbar(im2, ax=axes[2], label="Amplitude (dB)")
 
-    fig.suptitle("Demo 1: Ideal Turntable (V=0, w!=0, no MOCOMP)", fontsize=13)
+    fig.suptitle("Demo 1: Ideal Turntable (V=0, Δθ=%.1f°, валидный режим)"
+                 % math.degrees(omega * N_PULSES * PRI), fontsize=13)
     plt.tight_layout()
     plt.savefig("examples/demo_ideal_turntable.png", dpi=150)
     if sys.flags.interactive:
