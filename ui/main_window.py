@@ -732,7 +732,9 @@ class MainWindow(QMainWindow):
         self.chk_cross_scale.setChecked(self.cfg.cross_range_scaling == "auto")
         self.chk_cross_scale.setToolTip(
             "Оценка эффективной угловой скорости Omega_eff по линейному тренду "
-            "чирпа вдоль кросс-дальности; ось азимута перемасштабируется в метры. "
+            "чирпа вдоль кросс-дальности (осевая координата РЛИ — в 2D-тракте "
+            "профилированы дальности, документация R3); ось азимута "
+            "перемасштабируется в метры. "
             "Off = прежний конвейер (битовая совместимость)."
         )
         self.chk_cross_scale.stateChanged.connect(self._on_config_changed)
