@@ -1,6 +1,7 @@
 import math
 import logging
 import os
+import pickle
 import traceback
 
 import numpy as np
@@ -189,7 +190,19 @@ class DataProcessor(QThread):
             target: объект Target (для доступа к кинематике).
         """
         target = self._make_target()
-        E, f_r = generate_raw_matrix(self.radar, target, effects=self.effects)
+        try:
+            E, f_r = generate_raw_matrix(self.radar, target, effects=self.effects)
+        except pickle.UnpicklingError as e:
+            # F7: повреждённые модели (усечённый blob) дают понятное сообщение
+            # вместо сырого traceback в глубине конвейера. Исходная причина —
+            # в __cause__ (raise ... from e); errors_occurred → GUI-статус.
+            msg = (f"Модель {self.filename} повреждена (файл усечён в "
+                   f"репозитории); расчёт невозможен. Замените .pkl из "
+                   f"исправной копии или выберите другую цель.")
+            logger.error("UnpicklingError при загрузке %s: %s",
+                         self.filename, e)
+            self.progress_message.emit(msg)
+            raise ValueError(msg) from e
         return E, f_r, target
 
     def compute_range_profiles(self):

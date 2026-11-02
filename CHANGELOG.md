@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+### F7: smoke-тест 18 .pkl + понятная ошибка для усечённого cloudSAT_high
+
+`matrices/matrices_cloudSAT_high.pkl` не читается с самого initial release
+(git c53dc39): `UnpicklingError: pickle data was truncated`. Выбор
+«CloudSat + высокая детализация» в GUI падал в глубине конвейера с сырым
+traceback.
+
+- Новый тест `tests/test_matrices_load.py` (21 кейс): 17 файлов — параметры
+  `intens/x0/y0`, конечность, неотрицательность; `cloudSAT_high` —
+  **строгий xfail** (после перезаливки файла владельцем тест станет
+  зелёным автоматически) + skip в параметризации.
+- `DataProcessor.generate_raw_data`: перехват `pickle.UnpicklingError` →
+  `ValueError` с понятным сообщением («файл усечён в репозитории…») —
+  летит в GUI через `error_occurred` → статус-лейбл; исходная причина
+  сохранена в `__cause__`; `progress_message` дублирует сообщение.
+- Приёмка: 17/18 загружаются, cloudSAT_high — контролируемый отказ.
+- `pytest`: 121 → **140 passed**, 1 skipped, 1 xfailed.
+
 ### F5: WVD биполярный — ось частот [-fs/2, fs/2), форма (N, 2N)
 
 `processing/tf_analysis.py::wigner_ville`: прежний дискретный WVD с
