@@ -112,7 +112,9 @@ class DataProcessor(QThread):
         # Угловое ускорение вращения цели (C&M, (1.13)): theta = omega*t + 0.5*gamma*t^2
         self.gamma = gamma
         # Модель цели/ось вращения: принимаются от GUI, в 2D-конвейере не используются
-        # (3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8)
+        # (3D-обработка форм — в ветке feature/scatterer-3d, вне R2-R8).
+        # F8: поля 3D-кинематики отключены в GUI (тултипы «Не реализовано в
+        # 2D-конвейере») — параметры остаются в API для обратной совместимости.
         self.target_model = target_model
         self.satellite = satellite
         self.omega_axis_y = omega_axis_y

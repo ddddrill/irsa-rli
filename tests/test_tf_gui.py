@@ -144,6 +144,47 @@ def test_gui_smoke_signal_tab():
         app.processEvents()
 
 
+# --------------------------------------------------------- F8: 3D-поля GUI
+def test_f8_3d_kinematics_fields_disabled():
+    """F8 §10.3: поля 3D-кинематики (прецессия ×2, ось ω y/z) недоступны
+    с тултипом «Не реализовано»; комбобокс «Модель» остаётся активным."""
+    app = _qapp()
+    from ui.main_window import MainWindow
+
+    win = MainWindow()
+    try:
+        tooltip_marker = "Не реализовано в 2D-конвейере"
+        for attr in ("le_precession_rate", "le_precession_angle",
+                     "le_omega_axis_y", "le_omega_axis_z"):
+            lbl, le = getattr(win, attr)
+            assert not le.isEnabled(), attr
+            assert not lbl.isEnabled(), attr
+            assert tooltip_marker in le.toolTip(), attr
+        # модель цели — активна (метка пресета)
+        assert win.cb_target_model.isEnabled()
+    finally:
+        win.close()
+        app.processEvents()
+
+
+def test_f8_data_processor_backcompat_kwargs():
+    """F8 §10.3: API DataProcessor принимает 3D-kwargs (gamma, прецессия,
+    оси ω) — обратная совместимость, физика не менялась."""
+    from processing.data_processor import DataProcessor
+
+    proc = DataProcessor(
+        filename="matrices/matrices_solarB_high.pkl", method="стандартный",
+        f_c=8.0, Xmax=40.0, Ymax=40.0, spectr_w=0.5, ang=9.0,
+        range_m=500_000.0, nifft_size=256, V=0.0, alpha=0.0, omega=0.004,
+        pri=0.05, num_pulses=256,
+        gamma=0.01, target_model="формы (json)", omega_axis_y=0.3,
+        omega_axis_z=0.7, precession_rate=0.05, precession_angle_deg=8.0,
+    )
+    assert proc.target_model == "формы (json)"
+    assert proc.precession_rate == 0.05
+    assert proc.omega_axis_z == 0.7
+
+
 def _fake_tf_data(M=32, F=16, T=8, n_frames=4):
     rng = np.random.default_rng(3)
     Q = rng.random((M, F, T)).astype(np.float32)

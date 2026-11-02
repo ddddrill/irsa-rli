@@ -242,31 +242,58 @@ class MainWindow(QMainWindow):
             "Модель", ["точечная", "формы (json)"],
             getattr(self.cfg, "target_model", "точечная"),
         )
+        self.cb_target_model.setToolTip(
+            "Метка пресета: «формы (json)» уточняет порядок загрузки "
+            "рассеивателей; геометрия остаётся точечно-рассеивательной "
+            "(3D-модель форм не реализована в 2D-конвейере).")
         self.cb_target_model.currentTextChanged.connect(self._on_config_changed)
         model_grid.addWidget(model_lbl, 0, 0); model_grid.addWidget(self.cb_target_model, 0, 1)
 
         self.le_omega_axis_y = self._make_input_widget(
             "Ось ω (y)", self.cfg.omega_axis_y,
             tooltip="Y-компонента оси вращения в СК цели (X=0 всегда).\n"
-                    "(0, 0, 1) = ось Z (по умолчанию); (0, 1, 0) = ось Y.",
+                    "(0, 0, 1) = ось Z (по умолчанию); (0, 1, 0) = ось Y.\n"
+                    "Не реализовано в 2D-конвейере (плоскость LOS×кросс-рейндж);"
+                    " требует 3D-кинематики (ω_eff = ω·cos β).",
         )
         self.le_omega_axis_z = self._make_input_widget(
             "Ось ω (z)", self.cfg.omega_axis_z,
-            tooltip="Z-компонента оси вращения в СК цели.",
+            tooltip="Z-компонента оси вращения в СК цели.\n"
+                    "Не реализовано в 2D-конвейере (плоскость LOS×кросс-рейндж);"
+                    " требует 3D-кинематики (ω_eff = ω·cos β).",
         )
         model_grid.addWidget(self.le_omega_axis_y[0], 0, 2); model_grid.addWidget(self.le_omega_axis_y[1], 0, 3)
         model_grid.addWidget(self.le_omega_axis_z[0], 1, 2); model_grid.addWidget(self.le_omega_axis_z[1], 1, 3)
 
         self.le_precession_rate = self._make_input_widget(
             "Прецессия, рад/с", self.cfg.precession_rate,
-            tooltip="Частота прецессии оси вращения (рад/с). 0 = нет прецессии.",
+            tooltip="Частота прецессии оси вращения (рад/с). 0 = нет прецессии.\n"
+                    "Не реализовано в 2D-конвейере — требует 3D-кинематики;"
+                    " молчаливый no-op отключён (см. «Не реализовано (2D)» в"
+                    " PARAMETERS_GUIDE).",
         )
         self.le_precession_angle = self._make_input_widget(
             "Прецессия, град", self.cfg.precession_angle_deg,
-            tooltip="Полуразворот конуса прецессии (град).",
+            tooltip="Полуразворот конуса прецессии (град).\n"
+                    "Не реализовано в 2D-конвейере — требует 3D-кинематики;"
+                    " молчаливый no-op отключён (см. «Не реализовано (2D)» в"
+                    " PARAMETERS_GUIDE).",
         )
         model_grid.addWidget(self.le_precession_rate[0], 1, 0); model_grid.addWidget(self.le_precession_rate[1], 1, 1)
         model_grid.addWidget(self.le_precession_angle[0], 2, 0); model_grid.addWidget(self.le_precession_angle[1], 2, 1)
+        # F8: поля 3D-кинематики (прецессия, ось ω y/z) молча игнорировались
+        # 2D-конвейером (_make_target их не передаёт в Target) — молчаливый
+        # no-op хуже отсутствия фичи. Поля недоступны; параметры остаются в
+        # API DataProcessor (обратная совместимость), физика не менялась.
+        _NOT_IMPLEMENTED_2D = ("Не реализовано в 2D-конвейере (плоскость "
+                               "LOS×кросс-рейндж); требует 3D-кинематики "
+                               "(ω_eff = ω·cos β).")
+        for _lbl, _le in (self.le_omega_axis_y, self.le_omega_axis_z,
+                          self.le_precession_rate, self.le_precession_angle):
+            _le.setEnabled(False)
+            _lbl.setEnabled(False)
+            _le.setToolTip((_le.toolTip() or "") + "\n" + _NOT_IMPLEMENTED_2D)
+            _lbl.setToolTip((_lbl.toolTip() or "") + "\n" + _NOT_IMPLEMENTED_2D)
         layout.addLayout(model_grid)
 
         # Параметры обработки
