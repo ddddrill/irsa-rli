@@ -1,8 +1,9 @@
 """Тесты TF-ядра: STFT/маргиналы/RID/WVD и сигнатуры микро-Доплера.
 
 Соответствие плану §7.7 (задача R5a): 7 тестов, все детерминированные
-(np.random.default_rng seed). Где нужны фикстуры — только radar_tf/target_tf.
+(np.random.default_rng seed). F5 добавил биполярный WVD (§7.4–7.5).
 """
+import pytest
 import numpy as np
 
 from processing.tf_analysis import (
@@ -188,14 +189,16 @@ def test_wvd_lfm_concentration():
 # ---------------------------------------------- 6. Кросс-термы WVD
 def test_wvd_cross_terms_documented():
     """§7.7/6: два тона -> энергия WVD на (f1+f2)/2 > -30 дБ от max
-    (кросс-терм — ожидаемое свойство билинейного распределения)."""
+    (кросс-терм — ожидаемое свойство билинейного распределения).
+    Биполярная ось (F5): f_ax[j] = (j − N)·fs/(2N), j=0..2N−1."""
     N, fs = 256, 1.0
     b1, b2 = 40, 120
     t = np.arange(N)
     x = np.exp(1j * 2.0 * np.pi * b1 / N * t) + np.exp(1j * 2.0 * np.pi * b2 / N * t)
     _, f_ax, W = wigner_ville(x, fs=fs)
     A = np.abs(W) ** 2.0
-    k_mid = b1 + b2                       # f_ax[k] = k*fs/(2N)
+    # f0 = b·fs/N соответствует j = N + 2b на биполярной оси (fs/(2N) на бин)
+    k_mid = N + b1 + b2                # (f1+f2)/2 = (b1+b2)/2 · fs/N
     assert abs(f_ax[k_mid] - 0.5 * (b1 + b2) * fs / N) < 1e-9
     level = 10.0 * np.log10(A[:, k_mid].max() / A.max())
     assert level > -30.0, f"кросс-терм на {level:.1f} дБ ниже max"
@@ -211,6 +214,62 @@ def test_determinism():
     r2 = rid_cube(P, fs=1.0, nperseg=64)
     assert np.array_equal(r1["Q_mag"], r2["Q_mag"])
     assert np.array_equal(r1["frame_idx"], r2["frame_idx"])
+
+
+# ------------------------------- 9. WVD биполярный (F5, план §7.4–7.5)
+def test_wvd_bipolar_tones():
+    """F5 §7.5: тоны ±5 Гц (fs=40, N=256) → пики на ±5 ± 2·fs/(2N);
+    форма (N, 2N); f_axis[0] = −fs/2.
+
+    Прежняя реализация с целочисленными лагами была π-периодичной (fs/2):
+    тон −5 Гц сворачивался на +15 Гц — для биполярного доплера ISAR
+    любая вращающаяся цель показывала неверную картину."""
+    N, fs = 256, 40.0
+    t = np.arange(N) / fs
+    df2 = fs / (2 * N)                      # разрешение новой оси
+    for f0 in (+5.0, -5.0):
+        x = np.exp(1j * 2.0 * np.pi * f0 * t)
+        _, f_ax, W = wigner_ville(x, fs=fs)
+        assert W.shape == (N, 2 * N)
+        assert f_ax[0] == pytest.approx(-fs / 2)
+        assert len(f_ax) == 2 * N
+        ridge = f_ax[np.argmax(np.abs(W).sum(axis=0))]
+        assert abs(ridge - f0) <= 2 * df2, (f0, ridge)
+
+
+def test_wvd_bipolar_pair_cross_term():
+    """F5 §7.4: смесь +5/−3 (ампл. 0.6/0.4) → пики на −2.97/+5.0 и
+    кросс-терм на средней частоте +1.0 (документирующий ассерт: свойство
+    билинейного распределения, не ошибка)."""
+    N, fs = 256, 40.0
+    t = np.arange(N) / fs
+    x = 0.6 * np.exp(1j * 2.0 * np.pi * 5.0 * t) + \
+        0.4 * np.exp(1j * 2.0 * np.pi * (-3.0) * t)
+    _, f_ax, W = wigner_ville(x, fs=fs)
+    spec = np.abs(W).sum(axis=0)
+    # авто-терм +5 на месте (допуск 2 бина новой оси)
+    ridge5 = f_ax[np.argmax(spec)]
+    assert abs(ridge5 - 5.0) <= 2 * fs / (2 * N), ridge5
+    # авто-терм −3 присутствует в своём окне (раньше сворачивался на +17)
+    near_m = spec[np.abs(f_ax + 3.0) <= 0.3].max()
+    assert near_m > 0.1, near_m
+    # кросс-терм на средней частоте пары +1 Гц — выше −30 дБ от max
+    mid = (5.0 + (-3.0)) / 2.0                        # +1 Гц
+    k_mid = int(np.argmin(np.abs(f_ax - mid)))
+    level = 10.0 * np.log10(spec[k_mid] / spec.max())
+    assert level > -30.0, f"кросс-терм на {level:.1f} дБ ниже max"
+
+
+def test_wvd_real_input_regression():
+    """F5 §7.5: вещественный cos(2π·5t) → пик на +5 Гц (аналитический сигнал
+    по-прежнему предотвращает зеркальную компоненту на −5)."""
+    N, fs = 256, 40.0
+    t = np.arange(N) / fs
+    x = np.cos(2.0 * np.pi * 5.0 * t)
+    _, f_ax, W = wigner_ville(x, fs=fs)
+    spec = np.abs(W).sum(axis=0)
+    ridge = f_ax[np.argmax(spec)]
+    assert abs(ridge - 5.0) <= 2 * (fs / (2 * N)), ridge
 
 
 # --------------------------------------- 8. Guard nperseg при нечётном N

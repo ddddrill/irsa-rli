@@ -124,9 +124,9 @@ def run(f_c=10e9, vib_amplitude=0.005, vib_frequency=3.0, pri=0.025,
                    extent=[t_w[0], t_w[-1], f_w[0], f_w[-1]], vmin=-40, vmax=0)
     ax.axhline(band, color="w", ls="--", lw=1.0)
     ax.axhline(-band, color="w", ls="--", lw=1.0)
-    ax.set_title("WVD того же бина (кросс-термы — свойство)")
+    ax.set_title("WVD того же бина (биполярная ось, кросс-термы — свойство)")
     ax.set_xlabel("Время, с")
-    ax.set_ylabel("Доплер, Гц, fs/2")
+    ax.set_ylabel("Доплер, Гц ([-fs/2, fs/2])")
     plt.colorbar(im, ax=ax, label="дБ")
 
     ax = axes[1, 1]

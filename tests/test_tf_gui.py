@@ -193,7 +193,8 @@ def test_gui_updates_controls_and_redraw():
         win.tf_transform_combo.setCurrentIndex(1)   # WVD топ-бина
         win._redraw_tf()
         img = win.tf_img.image
-        assert img.shape[0] == 8 and img.shape[1] == 8
+        # F5: WVD биполярный, форма (N, 2N) — N=8 строк, 16 частотных бинов
+        assert img.shape == (8, 16), img.shape
 
         win.tf_frame_slider.setValue(2)             # RID-кадр куба
         win._redraw_tf()
