@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QSplitter, QScrollArea, QWidget,
     QTabWidget, QCheckBox, QGridLayout, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QSlider,
+    QSlider, QRadioButton, QButtonGroup,
 )
 from PyQt5.QtCore import Qt, QTimer, QRectF, QThread
 from PyQt5.QtGui import QPixmap
@@ -38,6 +38,8 @@ class MainWindow(QMainWindow):
         self.cfg = AppConfig.load()
         self.processor = None
         self._frame_index = 0
+        self._updating_ui = False
+        self._recon_plan = None                    # план деривации (кэш GUI)
         self._init_ui()
 
     def _init_ui(self):
@@ -67,6 +69,11 @@ class MainWindow(QMainWindow):
 
         root_layout.addWidget(main_splitter)
         self.statusBar().showMessage("Готово к работе")
+
+        # RP3: применить радио-режим после создания ВСЕХ виджетов
+        # (le_spectrum/le_omega создаются в других секциях позже)
+        self._apply_param_mode()
+        self._update_derived_labels()
 
     # ================================================================
     #  Верхняя секция: спутник | параметры | кнопки
@@ -184,10 +191,59 @@ class MainWindow(QMainWindow):
         radar_grid.addWidget(self.le_snr[0], 2, 2); radar_grid.addWidget(self.le_snr[1], 2, 3)
         layout.addLayout(radar_grid)
 
-        # Параметры обзора
-        layout.addWidget(self._section_label("Обзор"))
-        survey_grid = QGridLayout()
-        survey_grid.setSpacing(4)
+        # Разрешение и обзор (RP3): радио-режим параметризации
+        layout.addWidget(self._section_label("Разрешение и обзор"))
+        self.rb_res = QRadioButton("Разрешения (реком.)")
+        self.rb_survey = QRadioButton("Обзор (legacy)")
+        self._mode_group = QButtonGroup(self)      # взаимная эксклюзивность
+        self._mode_group.addButton(self.rb_res)
+        self._mode_group.addButton(self.rb_survey)
+        self.rb_res.setToolTip(
+            "Пользователь задаёт целевые разрешения системы: Δr (дальность) "
+            "и Δx (азимут).\nПроизводные: B = c/(2·Δr); Δθ = λ/(2·Δx); "
+            "ω = Δθ/(N·PRI); обзор Xmax/Ymax — авто из геометрии цели "
+            "(2.4·max|δR|, пол 40 м, окно ≥1.2×).")
+        self.rb_survey.setToolTip(
+            "Legacy-параметризация v2.5.0: обзор (Xmax/Ymax), полоса "
+            "(spectr_w) и ω задаются руками — как в прежних версиях.")
+        self._recon_plan = None                    # план деривации (кэш GUI)
+        (self.rb_res if self.cfg.param_mode != "обзор" else self.rb_survey).setChecked(True)
+        self.rb_res.toggled.connect(self._on_param_mode_changed)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.rb_res)
+        mode_row.addWidget(self.rb_survey)
+        layout.addLayout(mode_row)
+
+        # Ввод целевых разрешений (режим «разрешения»)
+        res_grid = QGridLayout()
+        res_grid.setSpacing(4)
+        self.le_res_range = self._make_input_widget(
+            "Δr, м", self.cfg.res_range_m,
+            tooltip="Целевое разрешение по дальности (м).\n"
+                    "Выводится полоса B = c/(2·Δr), снэп к сетке 1 МГц.",
+        )
+        self.le_res_azimuth = self._make_input_widget(
+            "Δx, м", self.cfg.res_azimuth_m,
+            tooltip="Целевое разрешение по азимуту (м).\n"
+                    "Выводится полный угол Δθ = λ/(2·Δx) (снэп к сетке 0.05°), "
+                    "далее ω = Δθ/(N·PRI).\nПри C1a-нарушении рецепт в "
+                    "предупреждениях: N_min = N·fd_diff/Найквист.",
+        )
+        res_grid.addWidget(self.le_res_range[0], 0, 0); res_grid.addWidget(self.le_res_range[1], 0, 1)
+        res_grid.addWidget(self.le_res_azimuth[0], 0, 2); res_grid.addWidget(self.le_res_azimuth[1], 0, 3)
+        # Честные derived-поля (урок F8): только чтение, тултип с формулами
+        self.lbl_derived = QLabel("")
+        self.lbl_derived.setObjectName("status_info")
+        self.lbl_derived.setToolTip(
+            "Производные (только чтение):\n"
+            "B = c/(2·Δr); Δθ = λ/(2·Δx); ω = Δθ/(N·PRI) — N, PRI пользовательские;\n"
+            "Xmax = max(40, ⌈2.4·max|δR|⌉₅); Ymax = max(40, ⌈2.4·(max|y′|+\n"
+            "|V·sinα|·T_obs)⌉₅); Nf = ⌈2·B·Xmax/c⌉. Эмпирика — точная "
+            "кинематика Target (принцип guard'ов G1).")
+        res_grid.addWidget(self.lbl_derived, 1, 0, 1, 4)
+        layout.addLayout(res_grid)
+
+        # Legacy-ввод обзора (в «разрешении» отключается как производное)
         self.le_survey_length = self._make_input_widget(
             "Длина, м", self.cfg.survey_length,
             tooltip="Размер сцены по дальности (м). Используется для проектирования декартовой сетки.",
@@ -196,9 +252,13 @@ class MainWindow(QMainWindow):
             "Ширина, м", self.cfg.survey_width,
             tooltip="Размер сцены по азимуту (м). Используется для антиалиасинга по азимуту.",
         )
+        survey_grid = QGridLayout()
+        survey_grid.setSpacing(4)
         survey_grid.addWidget(self.le_survey_length[0], 0, 0); survey_grid.addWidget(self.le_survey_length[1], 0, 1)
         survey_grid.addWidget(self.le_survey_width[0], 0, 2); survey_grid.addWidget(self.le_survey_width[1], 0, 3)
         layout.addLayout(survey_grid)
+
+        self._update_derived_labels()
 
         # Кинематика цели
         layout.addWidget(self._section_label("Кинематика цели"))
@@ -215,7 +275,8 @@ class MainWindow(QMainWindow):
         self.le_omega = self._make_input_widget(
             "ω, рад/с", self.cfg.omega,
             tooltip="Угловая скорость вращения (рад/с). 0 = авто из beam_width.\n"
-                    "Δθ = ω · N · PRI. При Δθ ≥ 3° рекомендуется полярное переформатирование.",
+                    "Δθ = ω · N · PRI. При Δθ ≥ 3° рекомендуется полярное переформатирование.\n"
+                    "В режиме «Разрешения» ω — производное от Δx (только чтение).",
         )
         self.le_pri = self._make_input_widget(
             "PRI, с", self.cfg.pri,
@@ -603,7 +664,11 @@ class MainWindow(QMainWindow):
         dr = c / (2 * bw) if bw > 0 else 0
         pri = self.cfg.pri
         T_obs = Np * pri
-        omega = self.cfg.omega
+        # RP3: показывать фактическую ω процессора (в «разрешениях» —
+        # производная от Δx; в legacy при ω=0 — авто из beam_width)
+        omega = (self.processor.omega
+                 if (self.processor is not None and getattr(self.processor, "omega", None))
+                 else self.cfg.omega)
         dx = wavelength / (2 * omega * T_obs) if omega > 0 and T_obs > 0 else 0
 
         params = [
@@ -619,6 +684,9 @@ class MainWindow(QMainWindow):
             ("Время наблюдения T_obs", f"{T_obs:.2f} с"),
             ("Угловая скорость ω", f"{omega:.6f} рад/с"),
             ("Разрешение по азимуту Δx", f"{dx:.3f} м"),
+            ("Δθ (полный угол)", f"{math.degrees(omega * T_obs):.2f}°"
+                                 " (выведено из Δr/Δx)"
+                                 if self.cfg.param_mode == "разрешения" else ""),
             ("", ""),
             ("Размер матрицы E", f"{Nf} × {Np}"),
         ]
@@ -901,12 +969,18 @@ class MainWindow(QMainWindow):
         )
 
     def _on_config_changed(self):
+        if getattr(self, "_updating_ui", False):
+            return                      # эхо setText из _apply_param_mode
+        self.cfg.param_mode = "разрешения" if self.rb_res.isChecked() else "обзор"
         self.cfg.method = self.cb_method.currentText()
         self.cfg.satellite = self.cb_satellite.currentText()
         self.cfg.center_frequency = self._safe_float(self.le_frequency[1], self.cfg.center_frequency)
         self.cfg.spectrum_width = self._safe_float(self.le_spectrum[1], self.cfg.spectrum_width)
         self.cfg.nifft_size = self._safe_int(self.le_nifft[1], self.cfg.nifft_size)
         self.cfg.beam_width = self._safe_float(self.le_beam[1], self.cfg.beam_width)
+        if self.rb_res.isChecked():
+            self.cfg.res_range_m = self._safe_float(self.le_res_range[1], self.cfg.res_range_m)
+            self.cfg.res_azimuth_m = self._safe_float(self.le_res_azimuth[1], self.cfg.res_azimuth_m)
         self.cfg.survey_length = self._safe_float(self.le_survey_length[1], self.cfg.survey_length)
         self.cfg.survey_width = self._safe_float(self.le_survey_width[1], self.cfg.survey_width)
         self.cfg.range_km = self._safe_float(self.le_range[1], self.cfg.range_km)
@@ -953,7 +1027,79 @@ class MainWindow(QMainWindow):
         self.cfg.vib_frequency_hz = self._safe_float(self.le_vib_freq[1], self.cfg.vib_frequency_hz)
         self.cfg.seed = int(self.cfg.seed) if self.cfg.seed else 42
 
+        # RP3: живая деривация «разрешения → производные» при любом вводе
+        self._update_derived_labels()
+        self._apply_param_mode()
+
         self.cfg.save()
+
+    # ---------------- RP3: режимы параметризации ----------------
+
+    def _on_param_mode_changed(self):
+        self._on_config_changed()
+
+    def _apply_param_mode(self):
+        """Включить/выключить поля по режиму (урок F8: derived — не ввод)."""
+        res = self.rb_res.isChecked()
+        for name in ("le_spectrum", "le_omega",
+                     "le_survey_length", "le_survey_width"):
+            pair = getattr(self, name, None)
+            if pair is None:
+                continue                   # виджет ещё не создан (init)
+            pair[0].setEnabled(not res)
+            pair[1].setEnabled(not res)
+        self.le_res_range[0].setEnabled(res)
+        self.le_res_range[1].setEnabled(res)
+        self.le_res_azimuth[0].setEnabled(res)
+        self.le_res_azimuth[1].setEnabled(res)
+
+        # Производные значения — в отключаемые поля (честный вывод,
+        # тултип поясняет происхождение); setText блокируется guard'ом
+        self._updating_ui = True
+        try:
+            if res and self._recon_plan is not None:
+                plan = self._recon_plan
+                self.le_spectrum[1].setText(f"{plan.spectr_w_hz / 1e9:g}")
+                self.le_omega[1].setText(f"{plan.omega_rad_s:.6g}")
+                self.le_survey_length[1].setText(f"{plan.Xmax_m:g}")
+                self.le_survey_width[1].setText(f"{plan.Ymax_m:g}")
+        finally:
+            self._updating_ui = False
+
+    def _update_derived_labels(self):
+        """Живая деривация «Разрешения»: B/Δθ/ω/обзор/Nf из Δr/Δx."""
+        if not getattr(self, "rb_survey", None) or self.rb_survey.isChecked():
+            self.lbl_derived.setText("")
+            self._recon_plan = None
+            return
+        try:
+            from simulation.resolution import derive_recon
+            plan = derive_recon(
+                f_c_hz=self.cfg.center_frequency * 1e9,
+                dr_m=self.cfg.res_range_m, da_m=self.cfg.res_azimuth_m,
+                pri=self.cfg.pri, num_pulses=self.cfg.num_pulses,
+                R0_m=self.cfg.range_m, V=self.cfg.V, alpha=self.cfg.alpha,
+                filename=get_matrix_filename(self.cfg.satellite),
+                gamma=self.cfg.gamma)
+            self._recon_plan = plan
+            text = (
+                f"B = {plan.spectr_w_hz / 1e9:.3f} ГГц    "
+                f"Δθ (полный угол) = {math.degrees(plan.delta_theta_rad):.2f}°    "
+                f"ω = {plan.omega_rad_s:.3e} рад/с    "
+                f"Обзор Xmax/Ymax = {plan.Xmax_m:g}/{plan.Ymax_m:g} м (авто)    "
+                f"Nf = {plan.Nf}")
+            warn = "\n".join(plan.warnings)
+            if warn:
+                text += "    ⚠ есть предупреждения"
+            self.lbl_derived.setText(text)
+            self.lbl_derived.setToolTip(
+                "Производные (только чтение):\n"
+                "B = c/(2·Δr); Δθ = λ/(2·Δx); ω = Δθ/(N·PRI);\n"
+                "Xmax/Ymax — эмпирика точной кинематике Target (G1);\n"
+                "Nf = ⌈2·B·Xmax/c⌉." + (("\n\n" + warn) if warn else ""))
+        except Exception as e:
+            self._recon_plan = None
+            self.lbl_derived.setText(f"Производные недоступны: {e}")
 
     # ================================================================
     #  Кнопка 1: Показать КА
@@ -1043,6 +1189,10 @@ class MainWindow(QMainWindow):
             tf_n_frames=self.cfg.tf_n_frames,
             tf_window=self.cfg.tf_window,
             cross_range_scaling=self.cfg.cross_range_scaling,
+            res_range_m=(self.cfg.res_range_m
+                         if self.cfg.param_mode == "разрешения" else None),
+            res_azimuth_m=(self.cfg.res_azimuth_m
+                           if self.cfg.param_mode == "разрешения" else None),
         )
 
         # Подключаем сигналы промежуточных результатов
@@ -1357,6 +1507,10 @@ class MainWindow(QMainWindow):
             cross_range_scaling=self.cfg.cross_range_scaling,
             save_dir=save_dir,
             mode="stream",
+            res_range_m=(self.cfg.res_range_m
+                         if self.cfg.param_mode == "разрешения" else None),
+            res_azimuth_m=(self.cfg.res_azimuth_m
+                           if self.cfg.param_mode == "разрешения" else None),
         )
 
         self.progress_bar.setRange(0, self.cfg.num_pulses)
