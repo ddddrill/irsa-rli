@@ -111,3 +111,22 @@ def test_recon_warnings_deferred_not_emitted_in_init():
     assert any("WARN (RP)" in m for m in messages), messages[:5]
     # расчёт не блокируется: isar_ready должен прийти
     assert len(messages) > 0
+
+
+# --------------------------------------------- RP6: фиксы прогона -refmsg
+def test_memory_pre_guard_raises_config_error():
+    """RP6: E > 1.5 ГБ → ValueError с рецептом ДО аллокации (нет MemoryError)."""
+    from processing.data_processor import DataProcessor
+
+    proc = DataProcessor(
+        filename="matrices/matrices_solarB_high.pkl", method="стандартный",
+        f_c=8.0, Xmax=40.0, Ymax=40.0, spectr_w=0.5, ang=9.0,
+        range_m=500_000.0, nifft_size=256, V=0.0, alpha=0.0, omega=0.0,
+        pri=0.05, num_pulses=400, use_mocomp=False, window="none",
+        res_range_m=0.008, res_azimuth_m=1.34)        # Nf=5000 × N=40000
+    proc.num_pulses = 40000                           # после деривации
+    emitted = []
+    proc.progress_message.connect(emitted.append)
+    with pytest.raises(ValueError, match="ОШИБКА КОНФИГУРАЦИИ"):
+        proc.generate_raw_data()
+    assert any("превышает лимит" in m for m in emitted)

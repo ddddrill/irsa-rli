@@ -63,6 +63,11 @@ class DataProcessor(QThread):
     signal_data_ready = pyqtSignal(object, object)
     tf_ready = pyqtSignal(object)  # dict RID-куба и сигнатур (вкладка «Сигнатуры»)
 
+    # Прегенерационный лимит памяти матрицы E (RP6): bytes = Nf·N·16.
+    # 1.5 ГБ — на 2 порядка выше любого валидного конфига демо (~9 МБ),
+    # но отсекает попытки аллокации тибибайтов (V=7800 + T_obs=50 c).
+    _E_MEMORY_LIMIT_BYTES = 1_500_000_000
+
     # Логирование в GUI
     progress_message = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
@@ -214,7 +219,26 @@ class DataProcessor(QThread):
             E: комплексная матрица M×N (частоты × импульсы).
             f_r: вектор частот (M,).
             target: объект Target (для доступа к кинематике).
+
+        Raises:
+            ValueError: оценка матрицы E превышает лимит памяти
+                (RP6-фикс: вместо неконтролируемого MemoryError —
+                понятная ошибка конфигурации с рецептом).
         """
+        # Прегенерационный лимит памяти: E — Nf×N комплексных (complex128).
+        # Дефолтные конфиги ≤ ~10 МБ; приближение к 1.5 ГБ — уже ошибка
+        # конфигурации (реальный случай: V=7800 и T_obs=50 c → Nf=1.87e6).
+        est_bytes = self.radar.Nf * self.num_pulses * 16
+        if est_bytes > self._E_MEMORY_LIMIT_BYTES:
+            gb = est_bytes / 1e9
+            msg = (f"ОШИБКА КОНФИГУРАЦИИ: матрица E {self.radar.Nf}×{self.num_pulses} "
+                   f"≈ {gb:.1f} ГБ превышает лимит "
+                   f"{self._E_MEMORY_LIMIT_BYTES / 1e9:.1f} ГБ. Уменьшите обзор "
+                   f"(Δr крупнее → Nf меньше) и/или число импульсов N; "
+                   f"при V ≠ 0 — уменьшите T_obs = N·PRI.")
+            logger.error(msg)
+            self.progress_message.emit(msg)
+            raise ValueError(msg)
         target = self._make_target()
         try:
             E, f_r = generate_raw_matrix(self.radar, target, effects=self.effects)

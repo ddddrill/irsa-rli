@@ -191,3 +191,17 @@ def test_calc_rli_passes_res_kwargs(win, monkeypatch):
     assert isinstance(win.processor, _StubProc)
     assert win.processor.kw["res_range_m"] is None      # legacy → None
     assert win.processor.kw["res_azimuth_m"] is None
+
+
+# ------------------------------------ RP6: статус ошибки не затирается
+def test_error_status_survives_finished(win, monkeypatch):
+    """RP6-фикс: после error_occurred панели не показывают «РЛИ готов»."""
+    win._on_error(" MemoryError test")
+    win._on_calc_finished()                 # finished приходит и после ошибки
+    assert "Ошибка" in win.info_label.text()
+    assert "РЛИ готов" not in win.info_label.text()
+    # следующий успешный расчёт снова ставит «РЛИ готов»
+    win._calc_failed = False
+    win.btn_single.setEnabled(False)
+    win._on_calc_finished()
+    assert "РЛИ готов" in win.info_label.text()

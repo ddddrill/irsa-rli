@@ -197,7 +197,7 @@ def derive_recon(f_c_hz, dr_m, da_m, pri, num_pulses, R0_m, V=0.0, alpha=0.0,
             f"{nyquist:.1f} Гц): Δx = {da_m:.3f} м неосуществимо при "
             f"N = {num_pulses}. C1a от PRI не зависит; минимум импульсов "
             f"N_min = {n_min} (увеличьте N до N_min, ослабьте Δx до "
-            f"≥ {lam / (2.0 * delta_theta * n_min / max(num_pulses, 1)):.3f} м "
+            f"≥ {da_eff * n_min / max(num_pulses, 1):.3f} м "
             f"или уменьшите f_c). Справочно (чистое вращение): "
             f"N_min ≈ 4·span_y·Δθ/λ.")
     elif fd_tot >= nyquist:

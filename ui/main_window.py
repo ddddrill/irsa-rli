@@ -38,6 +38,7 @@ class MainWindow(QMainWindow):
         self.cfg = AppConfig.load()
         self.processor = None
         self._frame_index = 0
+        self._calc_failed = False
         self._updating_ui = False
         self._recon_plan = None                    # план деривации (кэш GUI)
         self._init_ui()
@@ -1213,6 +1214,12 @@ class MainWindow(QMainWindow):
         self.processor.start()
 
     def _on_calc_finished(self):
+        # RP6-фикс: при ошибке расчёта finished все равно приходит — не
+        # перезаписывать статус ошибки «РЛИ готов» (ловлено на прогоне:
+        # MemoryError в потоке оставлял зелёное «РЛИ готов» + 100 %).
+        if getattr(self, "_calc_failed", False):
+            self._calc_failed = False       # статус «Ошибка: …» остаётся
+            return
         self.btn_single.setEnabled(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
@@ -1441,6 +1448,7 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, msg):
         logger.error(msg)
+        self._calc_failed = True
         self.info_label.setObjectName("status_error")
         self.info_label.style().unpolish(self.info_label)
         self.info_label.style().polish(self.info_label)

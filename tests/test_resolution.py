@@ -83,6 +83,14 @@ def test_c1a_warning_with_n_min():
     assert n_min_msg, plan.warnings
     assert str(plan.N_min_c1a) in n_min_msg[0]
     assert plan.N_min_c1a > 64                        # рецепт: больше N
+    # RP6-фикс: рецепт «ослабьте Δx до ≥ X» должен ОСЛАБЛЯТЬ (X > текущего):
+    # Δx_req = Δx_eff·N_min/N (раньше печаталось обратное X < Δx)
+    import re
+    m = re.search(r"ослабьте Δx до ≥ ([0-9.]+) м", n_min_msg[0])
+    assert m, n_min_msg[0]
+    dx_req = float(m.group(1))
+    assert dx_req > 0.20, n_min_msg[0]                # слабее, не мельче
+    assert abs(dx_req - plan.da_effective_m * plan.N_min_c1a / 64) < 1e-3
     # масштабная проверка fd ∝ 1/N: при N = N_min диф. доплер ≈ Найквист
     # (замах сверху только из-за ceil внутри N_min)
     fd_at_nmin = plan.fd_diff_hz * 64 / plan.N_min_c1a
