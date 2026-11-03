@@ -35,6 +35,13 @@ class AppConfig:
                                         # при Nf=134; must cover max|δR| цели с
                                         # запасом ≥1.2 — см. PARAMETERS_GUIDE)
     survey_width: float = 40.0          # м
+
+    # Параметризация (RP2): «разрешения» — пользователь задаёт целевые
+    # разрешения Δr/Δx, B/Δθ/ω/обзор — производные (derive_recon);
+    # «обзор» — legacy-режим v2.5.0: survey/spectrum_width/omega — ввод.
+    param_mode: str = "разрешения"
+    res_range_m: float = 0.30           # целевое разрешение по дальности Δr, м
+    res_azimuth_m: float = 1.34         # целевое разрешение по азимуту Δx, м
     satellite: str = "solarB"
     range_km: float = 500.0             # дальность до объекта, км
 
@@ -103,6 +110,11 @@ class AppConfig:
                 data = json.load(f)
             valid_keys = {f.name for f in fields(cls)}
             filtered = {k: v for k, v in data.items() if k in valid_keys}
-            return cls(**filtered)
+            cfg = cls(**filtered)
+            if "param_mode" not in data:
+                # Конфиг прежней версии (v2.5.0): «обзор» задавался руками —
+                # сохраняем legacy-режим (RP2, обратная совместимость).
+                cfg.param_mode = "обзор"
+            return cfg
         except (FileNotFoundError, json.JSONDecodeError, TypeError):
             return cls()
