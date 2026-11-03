@@ -4,6 +4,8 @@ import os
 import pickle
 import traceback
 
+from simulation.resolution import derive_recon
+
 import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -78,7 +80,8 @@ class DataProcessor(QThread):
                  cross_range_scaling="off",
                  use_keystone=False,
                  enforce=False,
-                 satellite=None):
+                 satellite=None,
+                 res_range_m=None, res_azimuth_m=None):
         super().__init__()
         self.filename = filename
         self.method = method
@@ -134,7 +137,28 @@ class DataProcessor(QThread):
         # блокируется. enforce=True — программный API: hard-нарушения
         # (C1a, C2) прерывают расчёт исключением ValueError.
         self.enforce = enforce
-        if omega is not None and omega > 0:
+
+        # ---- RP4: инверсия параметризации (разрешения Δr/Δx) --------------
+        # При непустых res_*-kwargs аргументы spectr_w/omega/Xmax/Ymax —
+        # производные из derive_recon (план RP §3 RP4): «разрешения»-режим.
+        # Существующие позиционные/именованные аргументы прежние (задача
+        # RP4.1: бит-совместимость всех существующих вызовов и тестов).
+        self._recon_warnings = []
+        self._recon_plan = None
+        if res_range_m is not None and res_azimuth_m is not None:
+            plan = derive_recon(
+                f_c_hz=self.f_c, dr_m=res_range_m, da_m=res_azimuth_m,
+                pri=pri, num_pulses=num_pulses, R0_m=range_m,
+                V=V, alpha=alpha, filename=filename, gamma=gamma)
+            self.spectr_w = plan.spectr_w_hz        # Гц: НЕ умножается на 1e9
+            self.Xmax = plan.Xmax_m
+            self.Ymax = plan.Ymax_m
+            self._recon_warnings = list(plan.warnings)
+            self._recon_plan = plan
+            for w in plan.warnings:
+                logger.warning("%s", w)
+            self.omega = plan.omega_rad_s           # производная ω (Δx → Δθ)
+        elif omega is not None and omega > 0:
             self.omega = omega
         else:
             self.omega = math.radians(self.ang) / (self.num_pulses * self.pri)
@@ -330,6 +354,10 @@ class DataProcessor(QThread):
         #     совместимости с GUI). Сообщения модуля самодостаточны:
         #     hard (C1a, C2) начинаются с «ОШИБКА КОНФИГУРАЦИИ (C…): …»,
         #     warn — с «WARN (C…): …».
+        # RP4: сначала деривационные предупреждения (сигналы коннектятся
+        # после конструктора, поэтому эмит отложен в точку расчёта).
+        for _w in self._recon_warnings:
+            self.progress_message.emit(_w)
         checks = check_applicability(self.radar, target)
         if self.method == "с полярным переформатированием":
             # C4 (порог малых углов) актуален только для стандартного RD-
@@ -618,6 +646,9 @@ class DataProcessor(QThread):
         return E, f_r, ph_r, base_img, base_x, base_y
 
     def _compute_and_save(self):
+        # RP4: деривационные предупреждения (см. compute_isar_notified)
+        for _w in self._recon_warnings:
+            self.progress_message.emit(_w)
         if self.save_dir and os.path.exists(self.save_dir):
             for item in os.listdir(self.save_dir):
                 item_path = os.path.join(self.save_dir, item)

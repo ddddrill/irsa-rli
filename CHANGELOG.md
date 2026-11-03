@@ -34,12 +34,40 @@
   **22.7 мс** (бюджет ≤50 мс); термины «мёртвый авто-ω» из плана §1.3
   сняты: DataProcessor уже реализует ω-авто из beam_width (строка 140).
 
-- `school Тесты `tests/test_resolution.py` — 9 кейсов: бит-эталон demo-1
+- Тесты `tests/test_resolution.py` — 9 кейсов: бит-эталон demo-1
   (B/Δθ/ω/Xmax/Nf 40/134), roundtrip Δx→Δθ→Δx бит-точный, C1a-warning
   с N_min=250 при N=64/Δx=0.20, переводной demo-3 (Δθ≡radians(3.0),
   C1a margin 2.70×), Nf-cap 5000>4096, рост обзора с трансляцией
   (V=200 → Nf up), геометрия-центрирование, rejects, perf.
 - `pytest`: 142 → **151 passed**.
+
+### RP4: интеграционная шина `DataProcessor` — kwargs res_range_m/res_azimuth_m
+
+Третья задача плана (порядок RP1→RP4→RP2→RP3): kwargs позволяют любому
+вызову задавать целевые разрешения вместо обзора/полосы/ω:
+
+- **kwargs добавлены**: `res_range_m=None, res_azimuth_m=None` — при
+  ОБА непустых `__init__` вызывает `derive_recon` и подменяет
+  `spectr_w` (Гц, без ×1e9), `Xmax`, `Ymax`, `omega` ДО создания Radar;
+  позиционные/именованные вызовы прежних форм — без изменений
+  (бит-совместимость всех существующих тестов);
+- **было → стало** (demo-1, solarB_high, N=256, PRI=0.05): ввод
+  `spectr_w=0.5 ГГц, Xmax=40, Ymax=40, omega=radians(0.8)/(256·0.05)` →
+  ввод `res_range_m=0.30, res_azimuth_m=1.34` — та же E-матрица
+  **побитово** (`np.array_equal(E_res, E_exp)`); Nf=134 в обоих;
+- `res_*`-подавляют любые пользовательские spectr_w/Xmax/omega (тест:
+  spectr_w=9.99 ГГц / Xmax=20 / omega=777 игнорируются);
+- **предупреждения деривации**: НЕ эмитятся в `__init__` (сигналы PyQt
+  коннектятся после конструктора) — отложенный эмит через
+  `progress_message` в `compute_isar_notified` и `_compute_and_save`;
+  в лог пишутся сразу (`self._recon_warnings` инспектируется тестами);
+- без `res_*` — прежняя ветка дословно: `spectr_w*1e9`, авто-ω из
+  `radians(9.0)/(N·PRI)`;
+- Тесты `tests/test_resolution_data_processor.py` — 4 кейса:
+  бит-равенство E res-vs-legacy на demo-1; подавление мусорных вводов;
+  legacy-ветка без res_* (auto-ω из ang=9° ≡ `radians(9)/(256·0.05)`);
+  отложенный warning Δr=0.008 → Nf=5000 («WARN (RP): Nf = 5000 > 4096…»).
+- `pytest`: 151 → **155 passed**.
 
 ### DOC: документация границ применимости, SNR-выигрыша и физической корректности
 
