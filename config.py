@@ -58,12 +58,18 @@ class AppConfig:
     alpha: float = 0.0                  # угол направления движения, град
     omega: float = 0.0                  # угловая скорость, рад/с (0 = auto из beam_width)
     gamma: float = 0.0                  # угловое ускорение, рад/с² (0 = равномерное вращение)
-    pri: float = 1.0                    # период повторения импульсов, с
-    num_pulses: int = 1000              # число импульсов (= размер азимутальной оси РЛИ)
+    pri: float = 0.05                   # период повторения импульсов, с
+                                        # (дефолт = демо 1; Т_obs = PRI·N = 12.8 с)
+    num_pulses: int = 256               # число импульсов (= размер азимутальной оси РЛИ)
+                                        # (дефолт = демо 1; при том же Δθ больше N не
+                                        # улучшает фокус — только оверсемплинг)
 
     # Обработка
     use_mocomp: bool = True             # включить компенсацию движения
-    window: str = "none"                # азимутальное окно: none, hamming, hann, kaiser, chebwin, taylor
+    window: str = "hamming"             # азимутальное окно: none, hamming, hann, kaiser, chebwin, taylor
+                                        # (дефолт по прогону качества: hamming даёт
+                                        # энтропию 6.85 против 8.85 у "none" при
+                                        # одинаковых Δr/Δx — RP6-прогон GUI)
     window_param: float = None          # параметр окна: beta (kaiser, дефолт 8.0) или at-дБ (chebwin, дефолт 60.0)
     range_window: str = "none"          # дальностное окно (тот же набор); "none" = честная PSF Дирихле
     display_mode: str = "dB"            # режим отображения: linear, dB

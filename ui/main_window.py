@@ -286,7 +286,9 @@ class MainWindow(QMainWindow):
         self.le_num_pulses = self._make_input_widget(
             "Импульсов", self.cfg.num_pulses,
             tooltip="Число импульсов (= размер азимутальной оси РЛИ).\n"
-                    "Рекомендуется 1000 для качественного фокусированного изображения.",
+                    "При фиксированном Δθ больше N не улучшает фокус\n"
+                    "(только оверсемплинг); увеличивайте N — только по\n"
+                    "рецепту guard'а C1a (N_min). Дефолт 256 = конфиг демо 1.",
         )
         kin_grid.addWidget(self.le_V[0], 0, 0); kin_grid.addWidget(self.le_V[1], 0, 1)
         kin_grid.addWidget(self.le_alpha[0], 0, 2); kin_grid.addWidget(self.le_alpha[1], 0, 3)
