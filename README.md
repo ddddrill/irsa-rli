@@ -7,7 +7,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/ddddrill/irsa-rli)](https://github.com/ddddrill/irsa-rli/releases)
-[![Tests](https://img.shields.io/badge/pytest-78%20tests-brightgreen)](#тесты-и-воспроизводимость)
+[![Tests](https://img.shields.io/badge/pytest-168%20tests-brightgreen)](#тесты-и-воспроизводимость)
 [![GUI: PyQt5](https://img.shields.io/badge/GUI-PyQt5%2Bpyqtgraph-green)](https://doc.qt.io/qt-5/)
 
 <img src="assets/readme/hero.jpg" alt="Слева — наивный 2D FFT при большом угле: точки растянуты в дуги (arc smearing); справа — сфокусированное РЛИ после полярного переформатирования" width="880"/>
@@ -457,7 +457,7 @@ python -m examples.test_data_processor_polar   # интеграционный п
   title   = {IRSA: Inverse-Synthetic-Aperture Radar Simulator \& Analyzer},
   year    = {2026},
   url     = {https://github.com/ddddrill/irsa-rli},
-  version = {2.5.0}
+  version = {2.6.0}
 }
 ```
 
