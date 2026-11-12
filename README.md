@@ -457,7 +457,7 @@ python -m examples.test_data_processor_polar   # интеграционный п
   title   = {IRSA: Inverse-Synthetic-Aperture Radar Simulator \& Analyzer},
   year    = {2026},
   url     = {https://github.com/ddddrill/irsa-rli},
-  version = {2.6.0}
+  version = {2.6.1}
 }
 ```
 
