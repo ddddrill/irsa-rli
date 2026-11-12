@@ -253,6 +253,14 @@ class DataProcessor(QThread):
                          self.filename, e)
             self.progress_message.emit(msg)
             raise ValueError(msg) from e
+        except ValueError as e:
+            # P2-фикс: генератор сам отказывает в слишком большой
+            # broadcast-матрице (Nf×N×I) — сообщение уже содержит рецепт.
+            # Дублируем его в progress_message, чтобы GUI показал честный
+            # статус ошибки, а не голый ValueError.
+            logger.error("Ошибка генерации сырых данных: %s", e)
+            self.progress_message.emit(str(e))
+            raise
         return E, f_r, target
 
     def compute_range_profiles(self):

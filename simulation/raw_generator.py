@@ -14,6 +14,24 @@ from simulation.system_effects import phase_noise_process, two_way_antenna_weigh
 
 SPEED_OF_LIGHT = 3e8
 
+# ---------------------------------------------------------------------------
+# Память broadcast-матрицы (P2-фикс)
+# ---------------------------------------------------------------------------
+# Генератор строит фазу как broadcast (M, N, I): M=Nf частот, N импульсов,
+# I рассеивателей. Пример: Δr=8 мм → Nf=5000, N=256, I=182 → временные
+# массивы phi/exp ≈ 3.7 ГБ (в ~187 раз больше финальной E = 20 МБ) → OOM
+# на машинах с 4 ГБ, хотя memory-cap проверяет только E.
+#
+# Решение — чанкование по частотам (ось M). Суммирование по рассеивателям
+# (ось I) не меняет порядок → результат остаётся бит-в-бит тем же, но пик
+# памяти ограничен бюджетом BROADCAST_CHUNK_BYTES.
+BROADCAST_CHUNK_BYTES = 256 * 1024 ** 2       # бюджет временных массивов чанка
+BROADCAST_WORK_LIMIT_BYTES = 8 * 1024 ** 3    # предел полного объёма работы
+# На элемент broadcast: phi (float64, 8) + 1j*phi (complex128, 16) +
+# результат exp (complex128, 16) → пик ≈ 40 байт на элемент.
+_BROADCAST_BYTES_PER_ELEM = 40
+
+
 
 @dataclass
 class SimEffects:
@@ -198,12 +216,28 @@ def generate_raw_matrix(radar, target, effects=None):
         # W (N, I): broadcasting даёт sigma shape (N, I), совместимую с phi (M, N, I)
         sigma = sigma * W
 
-    # Фаза распространения
-    f_col = f_r[:, np.newaxis, np.newaxis]           # (M, 1, 1)
+    # Фаза распространения — чанками по частотам (ось M), чтобы не
+    # аллоцировать (M, N, I) целиком (P2-фикс: OOM при большой Nf).
+    # Чанкование по M не меняет порядок суммирования по рассеивателям
+    # (ось I) → результат бит-в-бит совпадает с монолитным расчётом.
     R_row = R_all[np.newaxis, :, :]                  # (1, N, I)
-    phi = -4.0 * np.pi * f_col / SPEED_OF_LIGHT * R_row
-
-    E_clean = np.sum(sigma * np.exp(1j * phi), axis=2)   # (M, N)
+    work_bytes = M * N * I * 16                     # один полный broadcast
+    if work_bytes > BROADCAST_WORK_LIMIT_BYTES:
+        gb = work_bytes / 1e9
+        msg = (f"ОШИБКА КОНФИГУРАЦИИ: broadcast-матрица {M}×{N}×{I} "
+               f"≈ {gb:.1f} ГБ превышает лимит "
+               f"{BROADCAST_WORK_LIMIT_BYTES / 1e9:.0f} ГБ. Уменьшите Δr "
+               f"(крупнее → меньше Nf), уменьшите N (число импульсов) или "
+               f"возьмите модель с меньшим числом рассеивателей.")
+        raise ValueError(msg)
+    rows = max(1, BROADCAST_CHUNK_BYTES //
+               (max(N * I, 1) * _BROADCAST_BYTES_PER_ELEM))
+    E_clean = np.empty((M, N), dtype=np.complex128)
+    for start in range(0, M, rows):
+        sl = slice(start, min(start + rows, M))
+        f_col = f_r[sl][:, np.newaxis, np.newaxis]    # (m, 1, 1)
+        phi = -4.0 * np.pi * f_col / SPEED_OF_LIGHT * R_row
+        E_clean[sl] = np.sum(sigma * np.exp(1j * phi), axis=2)   # (m, N)
 
     # Двухпутевая ДН антенны (вес по импульсам)
     if eff.use_antenna_pattern:

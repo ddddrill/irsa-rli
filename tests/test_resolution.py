@@ -129,6 +129,27 @@ def test_nf_cap_warning():
     assert "МБ" in cap[0]                             # бюджет памяти в сообщении
 
 
+def test_bandwidth_above_carrier_warning():
+    """P2: B > f_c → свип в отрицательные частоты: warning с рецептом."""
+    plan = derive_recon(
+        f_c_hz=FC, dr_m=0.008, da_m=DA_DEMO1_EXACT, pri=PRI_DEMO1,
+        num_pulses=N_DEMO1, R0_m=500_000.0, filename=SOLARB)
+    assert plan.spectr_w_hz > FC                     # B = 18.75 ГГц > 8 ГГц
+    w = [x for x in plan.warnings if "несущей" in x]
+    assert w, plan.warnings
+    assert "Ослабьте Δr" in w[0]
+    import re
+    m = re.search(r"Δr ≥ ([0-9.]+) м", w[0])
+    assert m, w[0]
+    assert float(m.group(1)) == pytest.approx(3e8 / (2 * FC), abs=1e-4)
+
+    # дефолтный конфиг (B = 0.5 ГГц < f_c) — предупреждения нет
+    ok = derive_recon(
+        f_c_hz=FC, dr_m=DR_DEMO1, da_m=DA_DEMO1_EXACT, pri=PRI_DEMO1,
+        num_pulses=N_DEMO1, R0_m=500_000.0, filename=SOLARB)
+    assert not any("несущей" in x for x in ok.warnings), ok.warnings
+
+
 def test_translation_grows_survey_and_nf():
     """V ≠ 0: авто-Xmax растёт (дрейф V·T_obs) → Nf растёт (план §1.2.3)."""
     base = derive_recon(

@@ -146,6 +146,17 @@ def derive_recon(f_c_hz, dr_m, da_m, pri, num_pulses, R0_m, V=0.0, alpha=0.0,
     if spectr_w <= 0:
         raise ValueError(f"полоса после снэпа не положительна: {spectr_w}")
 
+    # Физический предел полосы: свип f_r = f_c ± B/2 не может уходить в
+    # отрицательные частоты → B ≤ f_c (для 8 ГГц практически ≤ 1 ГГц).
+    if spectr_w > f_c_hz:
+        dr_max = S / (2.0 * f_c_hz)
+        warnings.append(
+            f"WARN (RP): полоса B = {spectr_w / 1e9:.3f} ГГц > несущей "
+            f"f_c = {f_c_hz / 1e9:.3f} ГГц — свип уходит в отрицательные "
+            f"частоты (физически невозможно). Максимум B ≤ f_c "
+            f"(реалистично ≤ 1 ГГц для X-диапазона 8 ГГц), т.е. "
+            f"Δr ≥ {dr_max:.4f} м. Ослабьте Δr.")
+
     # ---- Δθ: угол из Δx, снэп к сетке 0.05° (бит-совместимость) -----------
     dt_exact = lam / (2.0 * da_m)
     deg_exact = math.degrees(dt_exact)
