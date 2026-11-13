@@ -165,7 +165,11 @@ class MainWindow(QMainWindow):
         )
         self.le_spectrum = self._make_input_widget(
             "Спектр, ГГц", self.cfg.spectrum_width,
-            tooltip="Полоса частот SFCW (ГГц). Определяет разрешение по дальности: Δr = c/(2·B).",
+            tooltip="Полоса частот SFCW (ГГц): Δr = c/(2·B).\n"
+                    "В режиме «Разрешения» поле ТОЛЬКО ДЛЯ ЧТЕНИЯ (серое): B — производное,\n"
+                    "B = c/(2·Δr), вычисляется из Δr и показано здесь для сведения.\n"
+                    "Задать полосу вручную — переключите радио на «Обзор (legacy)»,\n"
+                    "тогда вводится B, а Δr станет производным (Δr = c/(2·B)).",
         )
         self.le_nifft = self._make_input_widget(
             "Размер FFT", self.cfg.nifft_size,
@@ -247,11 +251,17 @@ class MainWindow(QMainWindow):
         # Legacy-ввод обзора (в «разрешении» отключается как производное)
         self.le_survey_length = self._make_input_widget(
             "Длина, м", self.cfg.survey_length,
-            tooltip="Размер сцены по дальности (м). Используется для проектирования декартовой сетки.",
+            tooltip="Размер сцены по дальности (м).\n"
+                    "В режиме «Разрешения» поле ТОЛЬКО ДЛЯ ЧТЕНИЯ (серое): Xmax — производное,\n"
+                    "Xmax = max(40, 2.4·max|δR|) — оценивается из кинематики цели\n"
+                    "(дрейф V·T_obs + габарит). Задать вручную — радио «Обзор (legacy)».",
         )
         self.le_survey_width = self._make_input_widget(
             "Ширина, м", self.cfg.survey_width,
-            tooltip="Размер сцены по азимуту (м). Используется для антиалиасинга по азимуту.",
+            tooltip="Размер сцены по азимуту (м).\n"
+                    "В режиме «Разрешения» поле ТОЛЬКО ДЛЯ ЧТЕНИЯ (серое): Ymax — производное,\n"
+                    "Ymax = max(40, 2.4·(max|y′| + |V·sinα|·T_obs)). Задать вручную —\n"
+                    "радио «Обзор (legacy)».",
         )
         survey_grid = QGridLayout()
         survey_grid.setSpacing(4)
@@ -275,9 +285,13 @@ class MainWindow(QMainWindow):
         )
         self.le_omega = self._make_input_widget(
             "ω, рад/с", self.cfg.omega,
-            tooltip="Угловая скорость вращения (рад/с). 0 = авто из beam_width.\n"
-                    "Δθ = ω · N · PRI. При Δθ ≥ 3° рекомендуется полярное переформатирование.\n"
-                    "В режиме «Разрешения» ω — производное от Δx (только чтение).",
+            tooltip="Угловая скорость вращения (рад/с).\n"
+                    "В режиме «Разрешения» поле ТОЛЬКО ДЛЯ ЧТЕНИЯ (серое): ω — производное,\n"
+                    "ω = Δθ/(N·PRI), где Δθ = λ/(2·Δx) вычисляется из Δx.\n"
+                    "Задать ω вручную — переключите радио на «Обзор (legacy)»:\n"
+                    "ω > 0 — прямой ввод (Δx станет производным), ω = 0 — авто из\n"
+                    "ширины ДН (ω = Δθ_ДН/(N·PRI)).\n"
+                    "Δθ = ω·N·PRI; при Δθ ≥ 3° рекомендуется полярное переформатирование.",
         )
         self.le_pri = self._make_input_widget(
             "PRI, с", self.cfg.pri,
@@ -1033,6 +1047,19 @@ class MainWindow(QMainWindow):
         # RP3: живая деривация «разрешения → производные» при любом вводе
         self._update_derived_labels()
         self._apply_param_mode()
+
+        # UX (репорт пользователя «после ошибки уже ничего сделать нельзя»):
+        # статус ошибки не должен залипать. Любое изменение параметров —
+        # это подготовка новой попытки, поэтому красный статус ошибки
+        # сбрасывается в нейтральную подсказку. Сам расчёт при этом не
+        # запускается (кнопки активны с момента завершения потока).
+        if getattr(self, "_calc_failed", False):
+            self._calc_failed = False
+            self.info_label.setObjectName("status_info")
+            self.info_label.style().unpolish(self.info_label)
+            self.info_label.style().polish(self.info_label)
+            self.info_label.setText(
+                "Параметры изменены — нажмите «Рассчитать РЛИ»")
 
         self.cfg.save()
 

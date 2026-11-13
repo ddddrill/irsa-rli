@@ -205,3 +205,40 @@ def test_error_status_survives_finished(win, monkeypatch):
     win.btn_single.setEnabled(False)
     win._on_calc_finished()
     assert "РЛИ готов" in win.info_label.text()
+
+
+# ------------------------------------ UX: сброс «залипшего» статуса ошибки
+def test_error_status_resets_on_param_change(win):
+    """UX-фикс (репорт «после ошибки уже ничего сделать нельзя»): любое
+    изменение параметров после ошибки сбрасывает красный статус в
+    нейтральную подсказку — интерфейс явно готов к новой попытке."""
+    win._on_error(" MemoryError test")
+    assert win._calc_failed
+    assert win.info_label.objectName() == "status_error"
+    # пользователь правит поле → textChanged → _on_config_changed
+    win.le_pri[1].setText("0.06")
+    _qapp().processEvents()
+    assert not win._calc_failed
+    assert win.info_label.objectName() == "status_info"
+    assert "Параметры изменены" in win.info_label.text()
+    assert "Рассчитать РЛИ" in win.info_label.text()
+
+
+def test_config_change_keeps_normal_status(win):
+    """Без ошибки изменение параметров не трогает текущий статус."""
+    win.info_label.setText("РЛИ готов")
+    win.le_pri[1].setText("0.07")
+    _qapp().processEvents()
+    assert win.info_label.text() == "РЛИ готов"
+
+
+def test_derived_field_tooltips_explain_readonly(win):
+    """Тултипы производных полей объясняют «только чтение» и путь к вводу."""
+    for pair in (win.le_spectrum, win.le_omega,
+                 win.le_survey_length, win.le_survey_width):
+        tip = pair[1].toolTip()
+        assert "ТОЛЬКО ДЛЯ ЧТЕНИЯ" in tip, pair
+        assert "Обзор (legacy)" in tip, pair
+    # формулы происхождения производных указаны
+    assert "c/(2·Δr)" in win.le_spectrum[1].toolTip()
+    assert "Δθ/(N·PRI)" in win.le_omega[1].toolTip()
