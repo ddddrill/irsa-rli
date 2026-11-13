@@ -211,14 +211,19 @@ def test_error_status_survives_finished(win, monkeypatch):
 def test_error_status_resets_on_param_change(win):
     """UX-фикс (репорт «после ошибки уже ничего сделать нельзя»): любое
     изменение параметров после ошибки сбрасывает красный статус в
-    нейтральную подсказку — интерфейс явно готов к новой попытке."""
+    нейтральную подсказку — интерфейс явно готов к новой попытке.
+
+    Воспроизводится полный поток событий реального GUI: error_occurred →
+    finished (RP6-фикс очищает _calc_failed, но красный статус остаётся) →
+    правка поля → сброс.
+    """
     win._on_error(" MemoryError test")
-    assert win._calc_failed
     assert win.info_label.objectName() == "status_error"
+    win._on_calc_finished()          # finished приходит и после ошибки
+    assert win.info_label.objectName() == "status_error"   # RP6: не затёрт
     # пользователь правит поле → textChanged → _on_config_changed
     win.le_pri[1].setText("0.06")
     _qapp().processEvents()
-    assert not win._calc_failed
     assert win.info_label.objectName() == "status_info"
     assert "Параметры изменены" in win.info_label.text()
     assert "Рассчитать РЛИ" in win.info_label.text()

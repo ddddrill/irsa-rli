@@ -1053,7 +1053,10 @@ class MainWindow(QMainWindow):
         # это подготовка новой попытки, поэтому красный статус ошибки
         # сбрасывается в нейтральную подсказку. Сам расчёт при этом не
         # запускается (кнопки активны с момента завершения потока).
-        if getattr(self, "_calc_failed", False):
+        # Условие — по фактическому стилю статуса: _calc_failed ненадёжен
+        # (RP6-фикс в _on_calc_finished очищает его при finished, оставляя
+        # красный статус; здесь ловится ровно видимое состояние «Ошибка: …»).
+        if self.info_label.objectName() == "status_error":
             self._calc_failed = False
             self.info_label.setObjectName("status_info")
             self.info_label.style().unpolish(self.info_label)
